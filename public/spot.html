@@ -226,12 +226,16 @@ function renderSpot(data) {
           </div>
         </div>`;
       } else if (cam.oid) {
-        // Ozolio image snapshot
-        const imgSrc = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
+        // Ozolio live video iframe embed
         wcHTML += `<div class="webcam-card">
-          <a class="webcam-img-wrap" href="https://relay.ozolio.com/pub.api?cmd=image&oid=${encodeURIComponent(cam.oid)}" target="_blank" rel="noopener" title="View full size">
-            <img id="wc-img-${idx}" src="${imgSrc}" alt="${esc(cam.label)}" loading="lazy">
-          </a>
+          <div class="webcam-iframe-wrap">
+            <iframe
+              src="https://relay.ozolio.com/pub.cgi?cmd=iframe&oid=${encodeURIComponent(cam.oid)}"
+              allowfullscreen
+              allow="autoplay; encrypted-media"
+              style="border:0;"
+            ></iframe>
+          </div>
           <div class="webcam-footer">
             <span class="webcam-label">${esc(cam.label)}</span>
             <span class="live-badge"><span class="live-dot"></span> LIVE</span>
@@ -242,16 +246,14 @@ function renderSpot(data) {
     wcHTML += '</div>';
     wcSection.innerHTML = wcHTML;
 
-    // Auto-refresh Ozolio & Hazcam images every 60s
-    const refreshableCams = webcams.filter(c => c.oid || c.hazcam);
+    // Auto-refresh Hazcam images every 60s
+    const refreshableCams = webcams.filter(c => c.hazcam);
     if (refreshableCams.length > 0) {
       const refreshTimer = setInterval(() => {
         webcams.forEach((cam, idx) => {
           const img = document.getElementById(`wc-img-${idx}`);
           if (!img) return;
-          if (cam.oid) {
-            img.src = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
-          } else if (cam.hazcam) {
+          if (cam.hazcam) {
             img.src = `https://data.hazcams.com/thumbnails/${encodeURIComponent(cam.hazcam)}/large.webp?ts=${Date.now()}`;
           }
         });
