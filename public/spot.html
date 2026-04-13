@@ -178,27 +178,16 @@ function renderSpot(data) {
     wcHTML += '<div class="webcams-grid">';
     webcams.forEach((cam, idx) => {
       if (cam.twitch) {
-        // Show thumbnail; tap loads the Twitch iframe inline.
-        // No autoplay — on iOS the Twitch player shows its own play button (one tap to play).
-        // This keeps the user on the page on all devices.
+        // Twitch: fetch HLS URL via our proxy Worker, play with native <video> (works on iOS)
         const thumbUrl = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(cam.twitch)}-440x248.jpg`;
-        const cardId = `twitch-card-${idx}`;
-        const parents = [location.hostname];
-        if (location.hostname !== 'kite-conditions.chip-306.workers.dev')
-          parents.push('kite-conditions.chip-306.workers.dev');
-        const parentParams = parents.map(p => `parent=${p}`).join('&');
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        // Desktop autoplays; mobile waits for user tap inside the player
-        const autoplay = isMobile ? 'false' : 'true';
-        const muted = isMobile ? 'false' : 'true';
-        const iframeSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(cam.twitch)}&${parentParams}&autoplay=${autoplay}&muted=${muted}`;
-        wcHTML += `<div class="webcam-card" id="${cardId}">
-          <div class="webcam-img-wrap" onclick="loadTwitchPlayer('${cardId}','${iframeSrc}')" title="Tap to load stream">
-            <img src="${thumbUrl}" alt="${esc(cam.label)}" loading="lazy" onerror="this.style.display='none'">
-            <div class="webcam-overlay">
-              <div class="webcam-play">▶</div>
-              <div style="color:#fff;font-size:.75rem;margin-top:.3rem;">Tap to load stream</div>
-            </div>
+        wcHTML += `<div class="webcam-card">
+          <div class="webcam-iframe-wrap" style="position:relative;background:#000;">
+            <video id="wc-video-${idx}" class="webcam-hls-video"
+              poster="${thumbUrl}"
+              autoplay muted playsinline
+              style="width:100%;height:100%;object-fit:cover;"
+            ></video>
+            <div id="wc-loading-${idx}" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:.7rem;opacity:.7;pointer-events:none;">Loading live video…</div>
           </div>
           <div class="webcam-footer">
             <span class="webcam-label">${esc(cam.label)}</span>
@@ -264,6 +253,14 @@ function renderSpot(data) {
       ozolioCams.forEach((cam, i) => {
         const idx = webcams.indexOf(cam);
         initOzolioHLS(cam.oid, idx);
+      });
+    }
+    // Initialize HLS live video for Twitch webcams
+    const twitchCams = webcams.filter(c => c.twitch);
+    if (twitchCams.length > 0) {
+      twitchCams.forEach((cam) => {
+        const idx = webcams.indexOf(cam);
+        initTwitchHLS(cam.twitch, idx);
       });
     }
     // Auto-refresh Hazcam thumbnails every 60s
@@ -416,24 +413,76 @@ function gustColorClass(g) { return g < 25 ? 'gust-low' : (g < 35 ? 'gust-med' :
 function windColor(w) { return w >= 15 ? 'var(--send-it)' : (w >= 12 ? 'var(--maybe)' : 'var(--text-muted)'); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-// Swap Twitch thumbnail for inline iframe player on tap
-function loadTwitchPlayer(cardId, iframeSrc) {
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const thumb = card.querySelector('.webcam-img-wrap');
-  if (!thumb) return;
+// Fetch Twitch HLS URL from our proxy Worker and play with native <video>
+async function initTwitchHLS(channel, idx) {
+  const video = document.getElementById(`wc-video-${idx}`);
+  const loadingEl = document.getElementById(`wc-loading-${idx}`);
+  if (!video) return;
 
-  const iframeWrap = document.createElement('div');
-  iframeWrap.className = 'webcam-iframe-wrap';
+  try {
+    if (loadingEl) loadingEl.textContent = 'Connecting to stream…';
 
-  const iframe = document.createElement('iframe');
-  iframe.src = iframeSrc;
-  iframe.allowFullscreen = true;
-  iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
-  iframe.style.cssText = 'border:0;width:100%;height:100%;';
-  iframeWrap.appendChild(iframe);
+    const resp = await fetch(`/api/twitch-hls/${encodeURIComponent(channel)}`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    const hlsUrl = data.hls_url;
+    if (!hlsUrl) throw new Error('No HLS URL returned');
 
-  thumb.replaceWith(iframeWrap);
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS (Safari / iOS) — plays directly
+      video.src = hlsUrl;
+      video.play().catch(() => {});
+      if (loadingEl) loadingEl.style.display = 'none';
+    } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        maxBufferLength: 10,
+        maxMaxBufferLength: 30,
+        liveSyncDurationCount: 2,
+        liveMaxLatencyDurationCount: 5,
+        liveDurationInfinity: true,
+      });
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {});
+        if (loadingEl) loadingEl.style.display = 'none';
+      });
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) { hls.destroy(); twitchFallback(channel, idx); }
+      });
+      video._hls = hls;
+    } else {
+      throw new Error('HLS not supported in this browser');
+    }
+  } catch (err) {
+    console.warn('Twitch HLS failed for', channel, err.message);
+    twitchFallback(channel, idx);
+  }
+}
+
+function twitchFallback(channel, idx) {
+  // Fall back to auto-refreshing thumbnail
+  const video = document.getElementById(`wc-video-${idx}`);
+  if (!video) return;
+  const wrap = video.parentElement;
+  if (!wrap) return;
+  const thumbUrl = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(channel)}-440x248.jpg`;
+  const img = document.createElement('img');
+  img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+  img.src = thumbUrl + '?ts=' + Date.now();
+  const loading = document.getElementById(`wc-loading-${idx}`);
+  if (loading) loading.style.display = 'none';
+  if (video._hls) video._hls.destroy();
+  wrap.replaceChild(img, video);
+  const t = setInterval(() => {
+    img.src = thumbUrl + '?ts=' + Date.now();
+  }, 30000);
+  webcamTimers.push(t);
 }
 
 // ── Ozolio HLS Live Video ─────────────
