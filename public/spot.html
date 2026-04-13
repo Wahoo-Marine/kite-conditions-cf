@@ -34,7 +34,7 @@
 
   <!-- Live Wind Station -->
   <div class="wind-station-section" id="wind-station-section" style="display:none;">
-    <div class="wind-station-header">🌬️ Live Wind — Villa Esencia Weather Station</div>
+    <div class="wind-station-header">🌬️ Live Wind — Weather Station</div>
     <div class="wind-station-content">
       <div class="wind-live-panel" id="wind-live-panel">
         <div class="wind-live-loading">Loading live wind data…</div>
@@ -335,6 +335,8 @@ function showLoading(on) {
 // ── Live Wind Station ─────────────────
 let windRefreshTimer = null;
 let hasWeatherStation = false;
+let lastWindHistory = null;
+let lastWindHours = 6;
 
 function initWindStation() {
   if (!hasWeatherStation) return;
@@ -344,6 +346,10 @@ function initWindStation() {
   // Auto-refresh every 60s
   if (windRefreshTimer) clearInterval(windRefreshTimer);
   windRefreshTimer = setInterval(loadWindData, 60000);
+  // Redraw chart on resize
+  window.addEventListener('resize', () => {
+    if (lastWindHistory) renderWindChart(lastWindHistory, lastWindHours);
+  });
 }
 
 async function loadWindData() {
@@ -351,8 +357,13 @@ async function loadWindData() {
     const res = await fetch(`/api/wind/${spotId}`);
     if (!res.ok) throw new Error('No wind data');
     const data = await res.json();
+    if (data.current && data.current.station_location) {
+      document.querySelector('.wind-station-header').textContent = `🌬️ Live Wind — ${data.current.station_location}`;
+    }
     renderWindLive(data.current);
     renderWindChart(data.history, data.history_hours);
+    lastWindHistory = data.history;
+    lastWindHours = data.history_hours;
   } catch (err) {
     console.warn('Wind data error:', err);
     $('#wind-live-panel').innerHTML = '<div class="wind-live-loading" style="color:var(--text-muted);">Wind data temporarily unavailable</div>';
