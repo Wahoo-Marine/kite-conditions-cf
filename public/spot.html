@@ -161,28 +161,47 @@ function renderSpot(data) {
     let wcHTML = '<div class="webcams-header">📹 Live Webcams</div>';
     wcHTML += '<div class="webcams-grid">';
     webcams.forEach((cam, idx) => {
-      const imgSrc = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
-      wcHTML += `<div class="webcam-card">
-        <a class="webcam-img-wrap" href="https://relay.ozolio.com/pub.api?cmd=image&oid=${encodeURIComponent(cam.oid)}" target="_blank" rel="noopener" title="View full size">
-          <img id="wc-img-${idx}" src="${imgSrc}" alt="${esc(cam.label)}" loading="lazy">
-        </a>
-        <div class="webcam-footer">
-          <span class="webcam-label">${esc(cam.label)}</span>
-          <span class="live-badge"><span class="live-dot"></span> LIVE</span>
-        </div>
-      </div>`;
+      if (cam.twitch) {
+        // Twitch live stream embed
+        const parent = location.hostname;
+        wcHTML += `<div class="webcam-card">
+          <div class="webcam-iframe-wrap">
+            <iframe src="https://player.twitch.tv/?channel=${encodeURIComponent(cam.twitch)}&parent=${parent}&muted=true" allowfullscreen frameborder="0"></iframe>
+          </div>
+          <div class="webcam-footer">
+            <span class="webcam-label">${esc(cam.label)}</span>
+            <span class="live-badge"><span class="live-dot"></span> LIVE</span>
+          </div>
+        </div>`;
+      } else if (cam.oid) {
+        // Ozolio image snapshot
+        const imgSrc = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
+        wcHTML += `<div class="webcam-card">
+          <a class="webcam-img-wrap" href="https://relay.ozolio.com/pub.api?cmd=image&oid=${encodeURIComponent(cam.oid)}" target="_blank" rel="noopener" title="View full size">
+            <img id="wc-img-${idx}" src="${imgSrc}" alt="${esc(cam.label)}" loading="lazy">
+          </a>
+          <div class="webcam-footer">
+            <span class="webcam-label">${esc(cam.label)}</span>
+            <span class="live-badge"><span class="live-dot"></span> LIVE</span>
+          </div>
+        </div>`;
+      }
     });
     wcHTML += '</div>';
     wcSection.innerHTML = wcHTML;
 
-    // Auto-refresh webcam images every 60s
-    const refreshTimer = setInterval(() => {
-      webcams.forEach((cam, idx) => {
-        const img = document.getElementById(`wc-img-${idx}`);
-        if (img) img.src = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
-      });
-    }, 60000);
-    webcamTimers.push(refreshTimer);
+    // Auto-refresh Ozolio images every 60s
+    const ozolioCams = webcams.filter(c => c.oid);
+    if (ozolioCams.length > 0) {
+      const refreshTimer = setInterval(() => {
+        webcams.forEach((cam, idx) => {
+          if (!cam.oid) return;
+          const img = document.getElementById(`wc-img-${idx}`);
+          if (img) img.src = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
+        });
+      }, 60000);
+      webcamTimers.push(refreshTimer);
+    }
   } else {
     wcSection.style.display = 'none';
   }

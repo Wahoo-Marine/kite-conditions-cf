@@ -154,7 +154,10 @@ function showForm(spot = null) {
   wcContainer.innerHTML = '';
   if (spot && spot.webcams) {
     const cams = Array.isArray(spot.webcams) ? spot.webcams : JSON.parse(spot.webcams);
-    cams.forEach(cam => addWebcamField(cam.oid, cam.label));
+    cams.forEach(cam => {
+      if (cam.twitch) addWebcamField('twitch', cam.twitch, cam.label);
+      else addWebcamField('ozolio', cam.oid || '', cam.label);
+    });
   }
 
   setTimeout(() => spot ? $('#spot-name').focus() : $('#geo-input').focus(), 100);
@@ -167,14 +170,21 @@ function hideForm() {
 }
 
 // ── Webcam Fields ─────────────────────
-function addWebcamField(oid = '', label = '') {
+function addWebcamField(type = 'ozolio', value = '', label = '') {
   const container = $('#webcam-fields');
   const row = document.createElement('div');
   row.className = 'form-row webcam-row';
   row.innerHTML = `
+    <div class="form-group" style="flex:0 0 100px">
+      <label>Type</label>
+      <select class="cam-type" style="padding:0.5rem;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);">
+        <option value="ozolio" ${type === 'ozolio' ? 'selected' : ''}>Ozolio</option>
+        <option value="twitch" ${type === 'twitch' ? 'selected' : ''}>Twitch</option>
+      </select>
+    </div>
     <div class="form-group" style="flex:2">
-      <label>Ozolio OID</label>
-      <input type="text" class="cam-oid" value="${esc(oid)}" placeholder="EMB_CSDO000005A2">
+      <label>${type === 'twitch' ? 'Channel' : 'OID'}</label>
+      <input type="text" class="cam-value" value="${esc(value)}" placeholder="${type === 'twitch' ? 'villaesencia' : 'EMB_CSDO000005A2'}">
     </div>
     <div class="form-group">
       <label>Label</label>
@@ -182,6 +192,18 @@ function addWebcamField(oid = '', label = '') {
     </div>
     <button class="btn btn-delete" type="button" style="align-self:flex-end;margin-bottom:0.8rem;" onclick="this.closest('.webcam-row').remove()">✕</button>
   `;
+  // Update label/placeholder when type changes
+  row.querySelector('.cam-type').addEventListener('change', function() {
+    const lbl = row.querySelector('.cam-value').previousElementSibling || row.querySelector('.form-group:nth-child(2) label');
+    const inp = row.querySelector('.cam-value');
+    if (this.value === 'twitch') {
+      lbl.textContent = 'Channel';
+      inp.placeholder = 'villaesencia';
+    } else {
+      lbl.textContent = 'OID';
+      inp.placeholder = 'EMB_CSDO000005A2';
+    }
+  });
   container.appendChild(row);
 }
 
@@ -243,9 +265,12 @@ async function saveSpot() {
   // Gather webcams
   const webcams = [];
   $$('.webcam-row').forEach(row => {
-    const oid = row.querySelector('.cam-oid').value.trim();
+    const type = row.querySelector('.cam-type').value;
+    const value = row.querySelector('.cam-value').value.trim();
     const label = row.querySelector('.cam-label').value.trim();
-    if (oid) webcams.push({ oid, label: label || 'Camera' });
+    if (!value) return;
+    if (type === 'twitch') webcams.push({ twitch: value, label: label || 'Camera' });
+    else webcams.push({ oid: value, label: label || 'Camera' });
   });
 
   const body = { name, lat, lon, webcams };
