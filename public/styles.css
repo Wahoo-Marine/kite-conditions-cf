@@ -248,7 +248,7 @@ nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
 .webcam-iframe-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .webcam-img-wrap .webcam-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.35); display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
 .webcam-img-wrap:hover .webcam-overlay { opacity: 1; }
-.webcam-overlay .play-icon { width: 48px; height: 48px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #0f1923; margin-bottom: 0.4rem; box-shadow: 0 4px 15px rgba(56, 189, 248, 0.4); }
+.webcam-overlay .play-icon, .webcam-overlay .webcam-play { width: 48px; height: 48px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #0f1923; margin-bottom: 0.4rem; box-shadow: 0 4px 15px rgba(56, 189, 248, 0.4); }
 .webcam-overlay span { font-size: 0.75rem; font-weight: 600; color: #fff; }
 .webcam-card .webcam-footer { padding: 0.5rem 0.8rem; display: flex; align-items: center; justify-content: space-between; }
 .webcam-footer .webcam-label { font-size: 0.78rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

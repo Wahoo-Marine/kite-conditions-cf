@@ -226,16 +226,13 @@ function renderSpot(data) {
           </div>
         </div>`;
       } else if (cam.oid) {
-        // Ozolio live video iframe embed
+        // Ozolio thumbnail with click-through to live video player
+        const imgSrc = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
         wcHTML += `<div class="webcam-card">
-          <div class="webcam-iframe-wrap">
-            <iframe
-              src="https://relay.ozolio.com/pub.cgi?cmd=iframe&oid=${encodeURIComponent(cam.oid)}"
-              allowfullscreen
-              allow="autoplay; encrypted-media"
-              style="border:0;"
-            ></iframe>
-          </div>
+          <a class="webcam-img-wrap" href="https://relay.ozolio.com/pub.cgi?cmd=iframe&oid=${encodeURIComponent(cam.oid)}" target="_blank" rel="noopener" title="Open live video">
+            <img id="wc-img-${idx}" src="${imgSrc}" alt="${esc(cam.label)}" loading="lazy">
+            <div class="webcam-overlay"><div class="webcam-play">▶</div><div style="color:#fff;font-size:.75rem;margin-top:.3rem;">Open live video</div></div>
+          </a>
           <div class="webcam-footer">
             <span class="webcam-label">${esc(cam.label)}</span>
             <span class="live-badge"><span class="live-dot"></span> LIVE</span>
@@ -246,14 +243,16 @@ function renderSpot(data) {
     wcHTML += '</div>';
     wcSection.innerHTML = wcHTML;
 
-    // Auto-refresh Hazcam images every 60s
-    const refreshableCams = webcams.filter(c => c.hazcam);
+    // Auto-refresh Ozolio & Hazcam thumbnail images every 60s
+    const refreshableCams = webcams.filter(c => c.oid || c.hazcam);
     if (refreshableCams.length > 0) {
       const refreshTimer = setInterval(() => {
         webcams.forEach((cam, idx) => {
           const img = document.getElementById(`wc-img-${idx}`);
           if (!img) return;
-          if (cam.hazcam) {
+          if (cam.oid) {
+            img.src = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
+          } else if (cam.hazcam) {
             img.src = `https://data.hazcams.com/thumbnails/${encodeURIComponent(cam.hazcam)}/large.webp?ts=${Date.now()}`;
           }
         });
