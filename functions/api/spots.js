@@ -7,12 +7,13 @@
 export async function onRequestGet(context) {
   const { env } = context;
   const { results } = await env.DB.prepare(
-    'SELECT id, name, lat, lon, webcams, sort_order FROM spots ORDER BY sort_order, rowid'
+    'SELECT id, name, lat, lon, webcams, weather_station, sort_order FROM spots ORDER BY sort_order, rowid'
   ).all();
 
   const spots = results.map(r => ({
     ...r,
     webcams: JSON.parse(r.webcams || '[]'),
+    weather_station: r.weather_station || null,
   }));
 
   return Response.json(spots);
@@ -25,6 +26,7 @@ export async function onRequestPost(context) {
   const lat = parseFloat(body.lat);
   const lon = parseFloat(body.lon);
   const webcams = body.webcams || [];
+  const weatherStation = body.weather_station || null;
 
   if (!name) return Response.json({ error: 'Name is required' }, { status: 400 });
   if (isNaN(lat) || isNaN(lon)) return Response.json({ error: 'Invalid lat/lon' }, { status: 400 });
@@ -38,8 +40,8 @@ export async function onRequestPost(context) {
   const webcamsJson = JSON.stringify(webcams);
 
   await env.DB.prepare(
-    'INSERT INTO spots (id, name, lat, lon, webcams, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(id, name, lat, lon, webcamsJson, sortOrder).run();
+    'INSERT INTO spots (id, name, lat, lon, webcams, weather_station, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, name, lat, lon, webcamsJson, weatherStation, sortOrder).run();
 
-  return Response.json({ id, name, lat, lon, webcams, sort_order: sortOrder }, { status: 201 });
+  return Response.json({ id, name, lat, lon, webcams, weather_station: weatherStation, sort_order: sortOrder }, { status: 201 });
 }
