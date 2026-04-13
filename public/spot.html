@@ -32,6 +32,20 @@
   <!-- Webcams -->
   <div class="webcams-section" id="webcams-section" style="display:none;"></div>
 
+  <!-- Live Wind Station -->
+  <div class="wind-station-section" id="wind-station-section" style="display:none;">
+    <div class="wind-station-header">🌬️ Live Wind — Villa Esencia Weather Station</div>
+    <div class="wind-station-content">
+      <div class="wind-live-panel" id="wind-live-panel">
+        <div class="wind-live-loading">Loading live wind data…</div>
+      </div>
+      <div class="wind-chart-wrap">
+        <canvas id="wind-chart" width="800" height="220"></canvas>
+        <div class="wind-chart-label" id="wind-chart-label">Wind history loading…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Range Picker -->
   <div class="range-picker" id="range-picker">
     <span class="range-label">Days:</span>
@@ -120,6 +134,7 @@ function renderSpot(data) {
   const { spot, current } = data;
   const days = spot.days || [];
   const webcams = spot.webcams || [];
+  hasWeatherStation = !!spot.weather_station;
   document.title = `🪁 ${spot.name} — Kite Conditions`;
 
   // Hero
@@ -296,6 +311,9 @@ function renderSpot(data) {
       document.querySelector(`.day-panel[data-idx="${idx}"]`).classList.add('active');
     });
   });
+
+  // Init live wind station if available
+  initWindStation();
 }
 
 // ── Helpers ───────────────────────────
@@ -312,6 +330,276 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 function showLoading(on) {
   $('#loading-overlay').classList.toggle('hidden', !on);
   $('#app').style.display = on ? 'none' : 'block';
+}
+
+// ── Live Wind Station ─────────────────
+let windRefreshTimer = null;
+let hasWeatherStation = false;
+
+function initWindStation() {
+  if (!hasWeatherStation) return;
+  const section = $('#wind-station-section');
+  section.style.display = 'block';
+  loadWindData();
+  // Auto-refresh every 60s
+  if (windRefreshTimer) clearInterval(windRefreshTimer);
+  windRefreshTimer = setInterval(loadWindData, 60000);
+}
+
+async function loadWindData() {
+  try {
+    const res = await fetch(`/api/wind/${spotId}`);
+    if (!res.ok) throw new Error('No wind data');
+    const data = await res.json();
+    renderWindLive(data.current);
+    renderWindChart(data.history, data.history_hours);
+  } catch (err) {
+    console.warn('Wind data error:', err);
+    $('#wind-live-panel').innerHTML = '<div class="wind-live-loading" style="color:var(--text-muted);">Wind data temporarily unavailable</div>';
+  }
+}
+
+function renderWindLive(c) {
+  if (!c) return;
+  const panel = $('#wind-live-panel');
+
+  const windCol = c.wind >= 15 ? 'var(--send-it)' : (c.wind >= 12 ? 'var(--maybe)' : 'var(--text-muted)');
+  const gustCls = c.gust < 25 ? 'gust-low' : (c.gust < 35 ? 'gust-med' : 'gust-high');
+
+  // Wind compass arrow rotation (0=N, 90=E, etc.)
+  const arrowDeg = (c.wind_dir + 180) % 360; // arrow points direction wind is going TO
+
+  const lastUpdated = c.last_received
+    ? new Date(c.last_received).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : '';
+
+  panel.innerHTML = `
+    <div class="wl-grid">
+      <div class="wl-wind-main">
+        <div class="wl-compass">
+          <svg viewBox="0 0 80 80" class="compass-svg">
+            <circle cx="40" cy="40" r="36" fill="none" stroke="var(--border)" stroke-width="2"/>
+            <text x="40" y="12" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-weight="600">N</text>
+            <text x="72" y="43" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-weight="600">E</text>
+            <text x="40" y="76" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-weight="600">S</text>
+            <text x="8" y="43" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-weight="600">W</text>
+            <g transform="rotate(${arrowDeg}, 40, 40)">
+              <line x1="40" y1="58" x2="40" y2="18" stroke="${windCol}" stroke-width="2.5" stroke-linecap="round"/>
+              <polygon points="40,16 35,26 45,26" fill="${windCol}"/>
+            </g>
+          </svg>
+        </div>
+        <div class="wl-wind-numbers">
+          <div class="wl-wind-speed" style="color:${windCol}">${Math.round(c.wind)}</div>
+          <div class="wl-wind-unit">${c.wind_units || 'mph'}</div>
+          <div class="wl-wind-dir">${c.wind_dir_cardinal || '?'} (${Math.round(c.wind_dir)}°)</div>
+        </div>
+      </div>
+      <div class="wl-details">
+        <div class="wl-detail"><span class="wl-detail-label">Gusts</span><span class="wl-detail-value ${gustCls}">${Math.round(c.gust)} ${c.wind_units || 'mph'}</span></div>
+        <div class="wl-detail"><span class="wl-detail-label">Temp</span><span class="wl-detail-value">${c.temp != null ? Math.round(c.temp) + '°F' : '—'}</span></div>
+        <div class="wl-detail"><span class="wl-detail-label">Feels Like</span><span class="wl-detail-value">${c.feels_like != null ? Math.round(c.feels_like) + '°F' : '—'}</span></div>
+        <div class="wl-detail"><span class="wl-detail-label">Humidity</span><span class="wl-detail-value">${c.humidity != null ? Math.round(c.humidity) + '%' : '—'}</span></div>
+        <div class="wl-detail"><span class="wl-detail-label">Hi / Lo</span><span class="wl-detail-value">${c.hi_temp != null ? Math.round(c.hi_temp) : '?'}° / ${c.lo_temp != null ? Math.round(c.lo_temp) : '?'}°</span></div>
+        <div class="wl-detail"><span class="wl-detail-label">Barometer</span><span class="wl-detail-value">${c.barometer || '—'} ${c.barometer_trend ? '(' + c.barometer_trend + ')' : ''}</span></div>
+      </div>
+    </div>
+    ${lastUpdated ? '<div class="wl-updated">Updated ' + lastUpdated + '</div>' : ''}
+  `;
+}
+
+function renderWindChart(history, hours) {
+  const canvas = $('#wind-chart');
+  const label = $('#wind-chart-label');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+
+  // Resize canvas for crisp rendering
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const W = rect.width || 800;
+  const H = 220;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(dpr, dpr);
+
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+
+  if (!history || history.length < 2) {
+    label.textContent = `Wind history building up — data appears as readings are collected over ${hours} hours`;
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'var(--text-muted)';
+    ctx.font = '13px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Collecting wind data...', W / 2, H / 2);
+    return;
+  }
+
+  label.textContent = `Last ${hours} hours — Wind Speed (solid) & Gusts (dashed)`;
+
+  const PAD_LEFT = 42;
+  const PAD_RIGHT = 15;
+  const PAD_TOP = 20;
+  const PAD_BOTTOM = 35;
+  const chartW = W - PAD_LEFT - PAD_RIGHT;
+  const chartH = H - PAD_TOP - PAD_BOTTOM;
+
+  // Data bounds
+  const allVals = history.flatMap(h => [h.wind, h.gust]).filter(v => v != null);
+  const minVal = 0;
+  const maxVal = Math.max(Math.ceil(Math.max(...allVals) / 5) * 5, 20);
+
+  const tMin = history[0].ts;
+  const tMax = history[history.length - 1].ts;
+  const tRange = tMax - tMin || 1;
+
+  function xPos(ts) { return PAD_LEFT + ((ts - tMin) / tRange) * chartW; }
+  function yPos(val) { return PAD_TOP + chartH - ((val - minVal) / (maxVal - minVal)) * chartH; }
+
+  // Background
+  ctx.fillStyle = 'rgba(26, 39, 51, 0.8)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines + labels
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.font = '10px -apple-system, sans-serif';
+  ctx.fillStyle = '#8899a6';
+
+  const gridSteps = maxVal <= 30 ? 5 : 10;
+  for (let v = minVal; v <= maxVal; v += gridSteps) {
+    const y = yPos(v);
+    ctx.beginPath();
+    ctx.moveTo(PAD_LEFT, y);
+    ctx.lineTo(W - PAD_RIGHT, y);
+    ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText(v + '', PAD_LEFT - 6, y + 3);
+  }
+
+  // Kite zone bands
+  // 12-25 mph ideal zone
+  const idealTop = yPos(25);
+  const idealBot = yPos(12);
+  ctx.fillStyle = 'rgba(34, 197, 94, 0.06)';
+  ctx.fillRect(PAD_LEFT, idealTop, chartW, idealBot - idealTop);
+
+  // Wind speed line (filled area)
+  ctx.beginPath();
+  ctx.moveTo(xPos(history[0].ts), yPos(history[0].wind));
+  for (let i = 1; i < history.length; i++) {
+    ctx.lineTo(xPos(history[i].ts), yPos(history[i].wind));
+  }
+  // Fill under
+  const windPath = new Path2D();
+  windPath.moveTo(xPos(history[0].ts), yPos(history[0].wind));
+  for (let i = 1; i < history.length; i++) {
+    windPath.lineTo(xPos(history[i].ts), yPos(history[i].wind));
+  }
+  windPath.lineTo(xPos(history[history.length - 1].ts), yPos(0));
+  windPath.lineTo(xPos(history[0].ts), yPos(0));
+  windPath.closePath();
+
+  const gradient = ctx.createLinearGradient(0, PAD_TOP, 0, PAD_TOP + chartH);
+  gradient.addColorStop(0, 'rgba(56, 189, 248, 0.25)');
+  gradient.addColorStop(1, 'rgba(56, 189, 248, 0.02)');
+  ctx.fillStyle = gradient;
+  ctx.fill(windPath);
+
+  // Wind speed line
+  ctx.beginPath();
+  ctx.moveTo(xPos(history[0].ts), yPos(history[0].wind));
+  for (let i = 1; i < history.length; i++) {
+    ctx.lineTo(xPos(history[i].ts), yPos(history[i].wind));
+  }
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Gust line (dashed)
+  ctx.beginPath();
+  ctx.setLineDash([4, 4]);
+  ctx.moveTo(xPos(history[0].ts), yPos(history[0].gust));
+  for (let i = 1; i < history.length; i++) {
+    ctx.lineTo(xPos(history[i].ts), yPos(history[i].gust));
+  }
+  ctx.strokeStyle = 'rgba(234, 179, 8, 0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Time labels on x-axis
+  ctx.fillStyle = '#8899a6';
+  ctx.font = '10px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+
+  // Show ~6 time labels
+  const labelCount = Math.min(6, history.length);
+  const step = Math.max(1, Math.floor(history.length / labelCount));
+  for (let i = 0; i < history.length; i += step) {
+    const x = xPos(history[i].ts);
+    const t = new Date(history[i].ts);
+    const label = t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    ctx.fillText(label, x, H - 8);
+
+    // Tick mark
+    ctx.beginPath();
+    ctx.moveTo(x, PAD_TOP + chartH);
+    ctx.lineTo(x, PAD_TOP + chartH + 4);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Legend
+  ctx.font = '11px -apple-system, sans-serif';
+  const legendX = W - PAD_RIGHT - 130;
+  const legendY = PAD_TOP + 8;
+
+  ctx.beginPath();
+  ctx.moveTo(legendX, legendY);
+  ctx.lineTo(legendX + 20, legendY);
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+  ctx.stroke();
+  ctx.fillStyle = '#38bdf8';
+  ctx.textAlign = 'left';
+  ctx.fillText('Wind', legendX + 25, legendY + 4);
+
+  ctx.beginPath();
+  ctx.moveTo(legendX, legendY + 16);
+  ctx.lineTo(legendX + 20, legendY + 16);
+  ctx.strokeStyle = 'rgba(234, 179, 8, 0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#eab308';
+  ctx.fillText('Gusts', legendX + 25, legendY + 20);
+
+  // Ideal zone label
+  ctx.fillStyle = 'rgba(34, 197, 94, 0.4)';
+  ctx.font = '9px -apple-system, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Ideal 12-25 mph', PAD_LEFT + 4, idealTop + 12);
+
+  // Latest value label
+  const last = history[history.length - 1];
+  const lx = xPos(last.ts);
+  const ly = yPos(last.wind);
+
+  // Current wind dot
+  ctx.beginPath();
+  ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#38bdf8';
+  ctx.fill();
+  ctx.strokeStyle = '#0f1923';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
 }
 </script>
 </body>

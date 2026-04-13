@@ -26,7 +26,7 @@ export async function onRequestGet(context) {
 
   // Load spot from D1
   const spot = await env.DB.prepare(
-    'SELECT id, name, lat, lon, webcams FROM spots WHERE id = ?'
+    'SELECT id, name, lat, lon, webcams, weather_station FROM spots WHERE id = ?'
   ).bind(spotId).first();
 
   if (!spot) {
@@ -58,6 +58,7 @@ export async function onRequestGet(context) {
       lon: spot.lon,
       timezone: tz,
       webcams,
+      weather_station: !!spot.weather_station,
       error,
       days,
     },

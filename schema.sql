@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS spots (
   lat REAL NOT NULL,
   lon REAL NOT NULL,
   webcams TEXT DEFAULT '[]',  -- JSON array
+  weather_station TEXT DEFAULT NULL,  -- WeatherLink URL token
   sort_order INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
