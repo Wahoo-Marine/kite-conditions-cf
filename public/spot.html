@@ -178,48 +178,33 @@ function renderSpot(data) {
     wcHTML += '<div class="webcams-grid">';
     webcams.forEach((cam, idx) => {
       if (cam.twitch) {
+        // Show thumbnail; tap loads the Twitch iframe inline.
+        // No autoplay — on iOS the Twitch player shows its own play button (one tap to play).
+        // This keeps the user on the page on all devices.
+        const thumbUrl = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(cam.twitch)}-440x248.jpg`;
+        const cardId = `twitch-card-${idx}`;
+        const parents = [location.hostname];
+        if (location.hostname !== 'kite-conditions.chip-306.workers.dev')
+          parents.push('kite-conditions.chip-306.workers.dev');
+        const parentParams = parents.map(p => `parent=${p}`).join('&');
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        if (isMobile) {
-          // On mobile: Twitch iframes can't autoplay on iOS — show thumbnail with two action buttons
-          const thumbUrl = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(cam.twitch)}-440x248.jpg`;
-          const twitchUrl = `https://www.twitch.tv/${encodeURIComponent(cam.twitch)}`;
-          const deepLink = `twitch://stream/${encodeURIComponent(cam.twitch)}`;
-          wcHTML += `<div class="webcam-card">
-            <div class="webcam-img-wrap" style="cursor:default;">
-              <img src="${thumbUrl}" alt="${esc(cam.label)}" loading="lazy" onerror="this.style.display='none'">
-              <div class="webcam-overlay" style="opacity:1;background:rgba(0,0,0,0.45);gap:0.5rem;">
-                <a href="${deepLink}" class="twitch-btn twitch-btn-app">▶ Open in Twitch App</a>
-                <a href="${twitchUrl}" target="_blank" rel="noopener" class="twitch-btn twitch-btn-web">Watch in Browser ↗</a>
-              </div>
+        // Desktop autoplays; mobile waits for user tap inside the player
+        const autoplay = isMobile ? 'false' : 'true';
+        const muted = isMobile ? 'false' : 'true';
+        const iframeSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(cam.twitch)}&${parentParams}&autoplay=${autoplay}&muted=${muted}`;
+        wcHTML += `<div class="webcam-card" id="${cardId}">
+          <div class="webcam-img-wrap" onclick="loadTwitchPlayer('${cardId}','${iframeSrc}')" title="Tap to load stream">
+            <img src="${thumbUrl}" alt="${esc(cam.label)}" loading="lazy" onerror="this.style.display='none'">
+            <div class="webcam-overlay">
+              <div class="webcam-play">▶</div>
+              <div style="color:#fff;font-size:.75rem;margin-top:.3rem;">Tap to load stream</div>
             </div>
-            <div class="webcam-footer">
-              <span class="webcam-label">${esc(cam.label)}</span>
-              <span class="live-badge"><span class="live-dot"></span> LIVE</span>
-            </div>
-          </div>`;
-        } else {
-          // Desktop: full iframe embed
-          const parents = [location.hostname];
-          if (location.hostname !== 'kite-conditions.chip-306.workers.dev')
-            parents.push('kite-conditions.chip-306.workers.dev');
-          const parentParams = parents.map(p => `parent=${p}`).join('&');
-          wcHTML += `<div class="webcam-card">
-            <div class="webcam-iframe-wrap">
-              <iframe
-                src="https://player.twitch.tv/?channel=${encodeURIComponent(cam.twitch)}&${parentParams}&muted=true&autoplay=true"
-                height="300"
-                width="400"
-                allowfullscreen
-                allow="autoplay; encrypted-media; fullscreen"
-                style="border:0;width:100%;height:100%;"
-              ></iframe>
-            </div>
-            <div class="webcam-footer">
-              <span class="webcam-label">${esc(cam.label)}</span>
-              <span class="live-badge"><span class="live-dot"></span> LIVE</span>
-            </div>
-          </div>`;
-        }
+          </div>
+          <div class="webcam-footer">
+            <span class="webcam-label">${esc(cam.label)}</span>
+            <span class="live-badge"><span class="live-dot"></span> LIVE</span>
+          </div>
+        </div>`;
       } else if (cam.youtube) {
         // YouTube live stream embed
         wcHTML += `<div class="webcam-card">
@@ -430,6 +415,26 @@ function ratingClass(r) { return r === 'send-it' ? 'send-it' : (r === 'maybe' ? 
 function gustColorClass(g) { return g < 25 ? 'gust-low' : (g < 35 ? 'gust-med' : 'gust-high'); }
 function windColor(w) { return w >= 15 ? 'var(--send-it)' : (w >= 12 ? 'var(--maybe)' : 'var(--text-muted)'); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// Swap Twitch thumbnail for inline iframe player on tap
+function loadTwitchPlayer(cardId, iframeSrc) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const thumb = card.querySelector('.webcam-img-wrap');
+  if (!thumb) return;
+
+  const iframeWrap = document.createElement('div');
+  iframeWrap.className = 'webcam-iframe-wrap';
+
+  const iframe = document.createElement('iframe');
+  iframe.src = iframeSrc;
+  iframe.allowFullscreen = true;
+  iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
+  iframe.style.cssText = 'border:0;width:100%;height:100%;';
+  iframeWrap.appendChild(iframe);
+
+  thumb.replaceWith(iframeWrap);
+}
 
 // ── Ozolio HLS Live Video ─────────────
 async function initOzolioHLS(oid, idx) {
