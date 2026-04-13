@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>📹 Live Webcam</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; }
@@ -14,8 +15,10 @@
     .cam-live { display: flex; align-items: center; gap: 0.3rem; font-size: 0.65rem; font-weight: 700; color: #22c55e; text-transform: uppercase; }
     .cam-live .dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-    .cam-img { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-    .cam-img img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+    .cam-video { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .cam-video video { max-width: 100%; max-height: 100vh; object-fit: contain; background: #000; }
+    .cam-video img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+    .cam-status { position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.6); font-size: 0.75rem; z-index: 10; pointer-events: none; }
   </style>
 </head>
 <body>
@@ -24,9 +27,14 @@
     <div class="cam-title" id="cam-title">Live Webcam</div>
     <div class="cam-live"><span class="dot"></span> LIVE</div>
   </div>
-  <div class="cam-img">
-    <img id="cam-img" alt="Loading webcam…">
+  <div class="cam-video" id="cam-container">
+    <video id="cam-video" autoplay muted playsinline
+      style="display:none;"
+      poster="">
+    </video>
+    <img id="cam-img" alt="Loading webcam…" style="display:none;">
   </div>
+  <div class="cam-status" id="cam-status">Connecting to live stream…</div>
   <script>
     const params = new URLSearchParams(location.search);
     const oid = params.get('oid');
@@ -35,12 +43,99 @@
       document.getElementById('cam-title').textContent = label;
       document.title = '\u{1f4f9} ' + label;
     }
+
+    const video = document.getElementById('cam-video');
     const img = document.getElementById('cam-img');
-    function refresh() {
-      if (oid) img.src = 'https://relay.ozolio.com/pub.api?cmd=poster&oid=' + encodeURIComponent(oid) + '&ts=' + Date.now();
+    const status = document.getElementById('cam-status');
+
+    // Set poster immediately
+    if (oid) {
+      video.poster = 'https://relay.ozolio.com/pub.api?cmd=poster&oid=' + encodeURIComponent(oid) + '&ts=' + Date.now();
     }
-    refresh();
-    setInterval(refresh, 5000);
+
+    async function initHLS() {
+      if (!oid) { showFallback(); return; }
+
+      try {
+        status.textContent = 'Initializing session…';
+
+        // Step 1: Init session
+        const docUrl = 'https://relay.ozolio.com/pub.cgi?cmd=iframe&oid=' + oid;
+        const initResp = await fetch(
+          'https://relay.ozolio.com/ses.api?cmd=init&oid=' + encodeURIComponent(oid) +
+          '&ver=5&channel=0&control=0&document=' + encodeURIComponent(docUrl)
+        );
+        if (!initResp.ok) throw new Error('Init failed: ' + initResp.status);
+        const initData = await initResp.json();
+        const sessionId = initData.session.id;
+
+        // Step 2: Open session
+        status.textContent = 'Connecting to stream…';
+        const openResp = await fetch(
+          'https://relay.ozolio.com/ses.api?cmd=open&oid=' + encodeURIComponent(sessionId) +
+          '&output=1&format=M3U8&profile=base'
+        );
+        if (!openResp.ok) throw new Error('Open failed: ' + openResp.status);
+        const openData = await openResp.json();
+        const hlsUrl = openData.output.source;
+        if (!hlsUrl) throw new Error('No stream URL');
+
+        // Step 3: Play HLS
+        status.textContent = 'Starting live video…';
+        video.style.display = 'block';
+
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          // Native HLS (Safari)
+          video.src = hlsUrl;
+          video.play().catch(() => {});
+          status.style.display = 'none';
+        } else if (Hls.isSupported()) {
+          const hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            maxBufferLength: 15,
+            maxMaxBufferLength: 60,
+            liveSyncDurationCount: 2,
+            liveMaxLatencyDurationCount: 5,
+            liveDurationInfinity: true,
+          });
+          hls.loadSource(hlsUrl);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            video.play().catch(() => {});
+            status.style.display = 'none';
+          });
+          hls.on(Hls.Events.ERROR, (event, data) => {
+            if (data.fatal) {
+              console.warn('HLS fatal error:', data.type, data.details);
+              hls.destroy();
+              showFallback();
+            }
+          });
+        } else {
+          throw new Error('HLS not supported');
+        }
+      } catch (err) {
+        console.warn('HLS init failed:', err.message);
+        showFallback();
+      }
+    }
+
+    function showFallback() {
+      // Fall back to auto-refreshing poster image
+      video.style.display = 'none';
+      img.style.display = 'block';
+      status.textContent = 'Live video unavailable — showing snapshots';
+      setTimeout(() => { status.style.display = 'none'; }, 3000);
+
+      function refresh() {
+        if (oid) img.src = 'https://relay.ozolio.com/pub.api?cmd=poster&oid=' + encodeURIComponent(oid) + '&ts=' + Date.now();
+      }
+      refresh();
+      setInterval(refresh, 5000);
+    }
+
+    initHLS();
   </script>
 </body>
 </html>
