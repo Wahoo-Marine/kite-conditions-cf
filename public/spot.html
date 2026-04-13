@@ -337,7 +337,7 @@ function renderSpot(data) {
     if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
       panelsHTML += '<div class="tide-chart-section">';
       panelsHTML += '<div class="tide-chart-header">🌊 Tides</div>';
-      panelsHTML += `<canvas class="tide-canvas" id="tide-canvas-${i}" width="800" height="120"></canvas>`;
+      panelsHTML += `<canvas class="tide-canvas" id="tide-canvas-${i}" height="120"></canvas>`;
       panelsHTML += '<div class="tide-extremes">';
       (d.tide.extremes || []).forEach(e => {
         const cls = e.type === 'H' ? 'tide-high' : 'tide-low';
@@ -390,6 +390,11 @@ function renderSpot(data) {
       $$('.day-panel').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
       document.querySelector(`.day-panel[data-idx="${idx}"]`).classList.add('active');
+      // Re-render tide chart for this day now that it's visible
+      const d = days[parseInt(idx)];
+      if (d && d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
+        renderTideChart(parseInt(idx), d.tide);
+      }
     });
   });
 
@@ -398,6 +403,15 @@ function renderSpot(data) {
     if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
       renderTideChart(i, d.tide);
     }
+  });
+
+  // Redraw tide charts on resize
+  window.addEventListener('resize', () => {
+    days.forEach((d, i) => {
+      if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
+        renderTideChart(i, d.tide);
+      }
+    });
   });
 
   // Init live wind station if available
@@ -520,8 +534,22 @@ function renderTideChart(dayIdx, tide) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
 
-  const rect = canvas.parentElement.getBoundingClientRect();
-  const W = rect.width || 800;
+  // Walk up the DOM to find a visible ancestor with a real width.
+  // getBoundingClientRect returns 0 when the element is inside a hidden tab panel.
+  function getAvailableWidth(el) {
+    let node = el;
+    while (node) {
+      const w = node.getBoundingClientRect().width;
+      if (w > 0) return w;
+      node = node.parentElement;
+    }
+    return el.closest('.day-panels-wrap')?.offsetWidth
+      || document.querySelector('.spot-content')?.offsetWidth
+      || document.documentElement.clientWidth
+      || 360;
+  }
+  // Subtract the section padding (0.6rem each side ≈ 19px total)
+  const W = Math.floor(getAvailableWidth(canvas.parentElement) - 19);
   const H = 120;
   canvas.width = W * dpr;
   canvas.height = H * dpr;
