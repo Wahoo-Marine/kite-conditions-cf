@@ -226,10 +226,11 @@ function renderSpot(data) {
           </div>
         </div>`;
       } else if (cam.oid) {
-        // Ozolio thumbnail with click-through to live video player
+        // Ozolio thumbnail with click-through to live video viewer page
         const imgSrc = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
+        const camViewerUrl = `/cam?oid=${encodeURIComponent(cam.oid)}&label=${encodeURIComponent(cam.label)}`;
         wcHTML += `<div class="webcam-card">
-          <a class="webcam-img-wrap" href="https://relay.ozolio.com/pub.cgi?cmd=iframe&oid=${encodeURIComponent(cam.oid)}" target="_blank" rel="noopener" title="Open live video">
+          <a class="webcam-img-wrap" href="${camViewerUrl}" target="_blank" rel="noopener" title="Open live video">
             <img id="wc-img-${idx}" src="${imgSrc}" alt="${esc(cam.label)}" loading="lazy">
             <div class="webcam-overlay"><div class="webcam-play">▶</div><div style="color:#fff;font-size:.75rem;margin-top:.3rem;">Open live video</div></div>
           </a>

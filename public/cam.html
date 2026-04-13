@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📹 Live Webcam</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0f1923; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    .cam-header { padding: 0.6rem 1rem; background: #1a2332; border-bottom: 1px solid #2d3748; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .cam-header a { color: #38bdf8; text-decoration: none; font-size: 0.85rem; font-weight: 600; }
+    .cam-header a:hover { text-decoration: underline; }
+    .cam-title { font-size: 0.95rem; font-weight: 700; }
+    .cam-wrap { flex: 1; position: relative; }
+    .cam-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <div class="cam-header">
+    <a href="javascript:history.back()">← Back</a>
+    <div class="cam-title" id="cam-title">Live Webcam</div>
+    <div style="width:60px;"></div>
+  </div>
+  <div class="cam-wrap" id="cam-wrap">
+    <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;">Loading webcam…</div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const oid = params.get('oid');
+    const label = params.get('label');
+    if (label) {
+      document.getElementById('cam-title').textContent = label;
+      document.title = '📹 ' + label;
+    }
+    if (oid) {
+      document.getElementById('cam-wrap').innerHTML =
+        '<iframe src="https://relay.ozolio.com/pub.cgi?cmd=embed&oid=' + encodeURIComponent(oid) + '" allowfullscreen allow="autoplay; encrypted-media"></iframe>';
+    }
+  </script>
+</body>
+</html>
