@@ -1,4 +1,5 @@
 name = "kite-conditions"
+account_id = "306c7c1b7819d4aab071bd67cee32229"
 compatibility_date = "2024-12-01"
 main = "./dist/index.js"
 
