@@ -197,6 +197,18 @@ function renderSpot(data) {
             <span class="live-badge"><span class="live-dot"></span> LIVE</span>
           </div>
         </div>`;
+      } else if (cam.hazcam) {
+        // Hazcams image snapshot (auto-refreshing weather cams)
+        const imgSrc = `https://data.hazcams.com/thumbnails/${encodeURIComponent(cam.hazcam)}/large.webp?ts=${Date.now()}`;
+        wcHTML += `<div class="webcam-card">
+          <a class="webcam-img-wrap" href="https://hazcams.com/station/${encodeURIComponent(cam.hazcam)}" target="_blank" rel="noopener" title="View live stream">
+            <img id="wc-img-${idx}" src="${imgSrc}" alt="${esc(cam.label)}" loading="lazy">
+          </a>
+          <div class="webcam-footer">
+            <span class="webcam-label">${esc(cam.label)}</span>
+            <span class="live-badge"><span class="live-dot"></span> LIVE</span>
+          </div>
+        </div>`;
       } else if (cam.oid) {
         // Ozolio image snapshot
         const imgSrc = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
@@ -214,14 +226,18 @@ function renderSpot(data) {
     wcHTML += '</div>';
     wcSection.innerHTML = wcHTML;
 
-    // Auto-refresh Ozolio images every 60s
-    const ozolioCams = webcams.filter(c => c.oid);
-    if (ozolioCams.length > 0) {
+    // Auto-refresh Ozolio & Hazcam images every 60s
+    const refreshableCams = webcams.filter(c => c.oid || c.hazcam);
+    if (refreshableCams.length > 0) {
       const refreshTimer = setInterval(() => {
         webcams.forEach((cam, idx) => {
-          if (!cam.oid) return;
           const img = document.getElementById(`wc-img-${idx}`);
-          if (img) img.src = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
+          if (!img) return;
+          if (cam.oid) {
+            img.src = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
+          } else if (cam.hazcam) {
+            img.src = `https://data.hazcams.com/thumbnails/${encodeURIComponent(cam.hazcam)}/large.webp?ts=${Date.now()}`;
+          }
         });
       }, 60000);
       webcamTimers.push(refreshTimer);
