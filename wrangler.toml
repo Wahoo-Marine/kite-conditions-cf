@@ -6,9 +6,9 @@ pages_build_output_dir = "./public"
 [[d1_databases]]
 binding = "DB"
 database_name = "kite-conditions-db"
-database_id = "placeholder-will-be-replaced-after-deploy"
+database_id = "e334d32d-94ef-4ba2-ae43-3d175b1420f0"
 
 # KV Namespace — caches Open-Meteo forecast responses
 [[kv_namespaces]]
 binding = "CACHE"
-id = "placeholder-will-be-replaced-after-deploy"
+id = "bbe782b255734d20b8e672581f0dfbcf"
