@@ -172,9 +172,9 @@ function addWebcamField(oid = '', label = '') {
   const row = document.createElement('div');
   row.className = 'form-row webcam-row';
   row.innerHTML = `
-    <div class="form-group">
-      <label>Webcam OID</label>
-      <input type="text" class="cam-oid" value="${esc(oid)}" placeholder="EMB_XXXX000000XX">
+    <div class="form-group" style="flex:2">
+      <label>Ozolio OID</label>
+      <input type="text" class="cam-oid" value="${esc(oid)}" placeholder="EMB_CSDO000005A2">
     </div>
     <div class="form-group">
       <label>Label</label>

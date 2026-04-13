@@ -161,16 +161,10 @@ function renderSpot(data) {
     let wcHTML = '<div class="webcams-header">📹 Live Webcams</div>';
     wcHTML += '<div class="webcams-grid">';
     webcams.forEach((cam, idx) => {
-      const camId = `webcam-${idx}`;
-      const src = `https://ozolio.com/pub/cmd=image&oid=${cam.oid}&ts=${Date.now()}`;
-      const streamUrl = `https://ozolio.com/pub/?oid=${cam.oid}`;
+      const imgSrc = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
       wcHTML += `<div class="webcam-card">
-        <a href="${streamUrl}" target="_blank" class="webcam-img-wrap" title="Open live stream">
-          <img id="${camId}" src="${src}" alt="${esc(cam.label)}" loading="lazy">
-          <div class="webcam-overlay">
-            <div class="play-icon">▶</div>
-            <span>Open live stream</span>
-          </div>
+        <a href="https://relay.ozolio.com/pub.api?cmd=image&oid=${encodeURIComponent(cam.oid)}" target="_blank" rel="noopener" title="View full size">
+          <img id="wc-img-${idx}" src="${imgSrc}" alt="${esc(cam.label)}" loading="lazy">
         </a>
         <div class="webcam-footer">
           <span class="webcam-label">${esc(cam.label)}</span>
@@ -181,14 +175,14 @@ function renderSpot(data) {
     wcHTML += '</div>';
     wcSection.innerHTML = wcHTML;
 
-    // Auto-refresh every 60s
-    webcams.forEach((cam, idx) => {
-      const timer = setInterval(() => {
-        const img = document.getElementById(`webcam-${idx}`);
-        if (img) img.src = `https://ozolio.com/pub/cmd=image&oid=${cam.oid}&ts=${Date.now()}`;
-      }, 60000);
-      webcamTimers.push(timer);
-    });
+    // Auto-refresh webcam images every 60s
+    const refreshTimer = setInterval(() => {
+      webcams.forEach((cam, idx) => {
+        const img = document.getElementById(`wc-img-${idx}`);
+        if (img) img.src = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
+      });
+    }, 60000);
+    webcamTimers.push(refreshTimer);
   } else {
     wcSection.style.display = 'none';
   }
