@@ -36,8 +36,11 @@ export async function onRequestGet(context) {
       return Response.json({ error: 'No token returned — channel may be offline' }, { status: 404 });
     }
 
-    // Step 2: Build the usher HLS URL
-    const params2 = new URLSearchParams({
+    // Step 2: Build the usher master playlist URL and return it directly.
+    // Do NOT pre-fetch or resolve to a quality-level URL — the signed token
+    // has a short TTL and the client needs the master playlist so HLS.js /
+    // Safari can keep fetching fresh segments continuously.
+    const usherParams = new URLSearchParams({
       sig: token.signature,
       token: token.value,
       allow_source: 'true',
@@ -47,35 +50,9 @@ export async function onRequestGet(context) {
       player: 'twitchweb',
       type: 'any',
     });
-    const hlsUrl = `${USHER_URL}/${channel}.m3u8?${params2.toString()}`;
+    const hlsUrl = `${USHER_URL}/${channel}.m3u8?${usherParams.toString()}`;
 
-    // Step 3: Verify the stream is actually live by fetching the playlist
-    const m3u8Resp = await fetch(hlsUrl, {
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!m3u8Resp.ok) {
-      return Response.json({ error: 'Stream offline or unavailable', status: m3u8Resp.status }, { status: 404 });
-    }
-
-    const m3u8Text = await m3u8Resp.text();
-
-    // Extract the best quality stream URL from the master playlist
-    const lines = m3u8Text.split('\n');
-    let bestUrl = null;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
-        // Prefer 720p60 or 480p; first entry is usually best quality
-        bestUrl = lines[i + 1]?.trim();
-        break; // take first (best quality)
-      }
-    }
-
-    if (!bestUrl) {
-      return Response.json({ error: 'Could not parse stream playlist' }, { status: 500 });
-    }
-
-    return Response.json({ hls_url: bestUrl, channel }, {
+    return Response.json({ hls_url: hlsUrl, channel }, {
       headers: {
         'Cache-Control': 'no-cache',
         'Access-Control-Allow-Origin': '*',
