@@ -180,9 +180,10 @@ function renderSpot(data) {
       if (cam.twitch) {
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         if (isMobile) {
-          // On mobile: show thumbnail; tap replaces it with an inline Twitch iframe
+          // On mobile: show thumbnail; tap opens Twitch app via deep link (instant play, no black screen)
           const thumbUrl = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(cam.twitch)}-440x248.jpg`;
           const twitchUrl = `https://www.twitch.tv/${encodeURIComponent(cam.twitch)}`;
+          const deepLink = `twitch://stream/${encodeURIComponent(cam.twitch)}`;
           const cardId = `twitch-card-${idx}`;
           const parents = [location.hostname];
           if (location.hostname !== 'kite-conditions.chip-306.workers.dev')
@@ -190,7 +191,7 @@ function renderSpot(data) {
           const parentParams = parents.map(p => `parent=${p}`).join('&');
           const iframeSrc = `https://player.twitch.tv/?channel=${encodeURIComponent(cam.twitch)}&${parentParams}&muted=true&autoplay=true`;
           wcHTML += `<div class="webcam-card" id="${cardId}">
-            <div class="webcam-img-wrap twitch-thumb" onclick="expandTwitch('${cardId}','${iframeSrc}','${twitchUrl}')" title="Tap to play">
+            <div class="webcam-img-wrap twitch-thumb" onclick="expandTwitch('${cardId}','${deepLink}','${twitchUrl}','${iframeSrc}')" title="Tap to play">
               <img src="${thumbUrl}" alt="${esc(cam.label)}" loading="lazy" onerror="this.style.display='none'">
               <div class="webcam-overlay">
                 <div class="webcam-play">▶</div>
@@ -437,30 +438,44 @@ function windColor(w) { return w >= 15 ? 'var(--send-it)' : (w >= 12 ? 'var(--ma
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
 // Replace Twitch thumbnail with inline iframe player on mobile tap
-function expandTwitch(cardId, iframeSrc, twitchUrl) {
+function expandTwitch(cardId, deepLink, twitchUrl, iframeSrc) {
   const card = document.getElementById(cardId);
   if (!card) return;
   const wrap = card.querySelector('.twitch-thumb');
   if (!wrap) return;
 
-  // Build the iframe container — same aspect-ratio wrapper used for desktop
-  const iframeWrap = document.createElement('div');
-  iframeWrap.className = 'webcam-iframe-wrap';
+  // Try the Twitch app deep link first — on iOS this opens the stream instantly.
+  // We detect whether the app opened by checking if the page loses focus.
+  // If it doesn't within ~800ms, the app isn't installed: fall back to inline iframe.
+  let appOpened = false;
+  const onBlur = () => { appOpened = true; };
+  window.addEventListener('blur', onBlur, { once: true });
 
-  const iframe = document.createElement('iframe');
-  iframe.src = iframeSrc;
-  iframe.allowFullscreen = true;
-  iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen');
-  iframe.style.cssText = 'border:0;width:100%;height:100%;';
-  iframeWrap.appendChild(iframe);
+  // Navigate to deep link
+  window.location.href = deepLink;
 
-  // Add a small "open in Twitch" fallback link beneath
-  const fallback = document.createElement('div');
-  fallback.style.cssText = 'text-align:center;padding:0.3rem 0;font-size:0.72rem;';
-  fallback.innerHTML = `<a href="${twitchUrl}" target="_blank" rel="noopener" style="color:var(--accent);">Can't play? Open in Twitch ↗</a>`;
+  setTimeout(() => {
+    window.removeEventListener('blur', onBlur);
+    if (appOpened) return; // App launched — nothing more to do
 
-  wrap.replaceWith(iframeWrap);
-  iframeWrap.insertAdjacentElement('afterend', fallback);
+    // App not installed — swap thumbnail for inline iframe
+    const iframeWrap = document.createElement('div');
+    iframeWrap.className = 'webcam-iframe-wrap';
+
+    const iframe = document.createElement('iframe');
+    iframe.src = iframeSrc;
+    iframe.allowFullscreen = true;
+    iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
+    iframe.style.cssText = 'border:0;width:100%;height:100%;';
+    iframeWrap.appendChild(iframe);
+
+    const fallback = document.createElement('div');
+    fallback.style.cssText = 'text-align:center;padding:0.3rem 0;font-size:0.72rem;';
+    fallback.innerHTML = `<a href="${twitchUrl}" target="_blank" rel="noopener" style="color:var(--accent);">Open in Twitch ↗</a>`;
+
+    wrap.replaceWith(iframeWrap);
+    iframeWrap.insertAdjacentElement('afterend', fallback);
+  }, 800);
 }
 
 // ── Ozolio HLS Live Video ─────────────
