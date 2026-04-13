@@ -11,18 +11,35 @@ export async function onRequestGet(context) {
   const { env, request } = context;
   const url = new URL(request.url);
 
-  const offset = Math.max(0, Math.min(parseInt(url.searchParams.get('offset') || '0') || 0, 15));
-  const numDays = Math.max(1, Math.min(parseInt(url.searchParams.get('days') || '7') || 7, 16 - offset));
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const startDate = new Date(today);
-  startDate.setDate(startDate.getDate() + offset);
-  const endDate = new Date(startDate);
-  endDate.setDate(endDate.getDate() + numDays - 1);
+  const maxDate = new Date(today);
+  maxDate.setDate(maxDate.getDate() + 15);
+
+  // Accept start/end dates (fall back to offset/days for backward compat)
+  let startDate, endDate;
+  const startParam = url.searchParams.get('start');
+  const endParam   = url.searchParams.get('end');
+
+  if (startParam && endParam) {
+    startDate = new Date(startParam + 'T00:00:00');
+    endDate   = new Date(endParam   + 'T00:00:00');
+    if (isNaN(startDate)) startDate = new Date(today);
+    if (isNaN(endDate))   { endDate = new Date(startDate); endDate.setDate(endDate.getDate() + 6); }
+    if (startDate < today)   startDate = new Date(today);
+    if (endDate > maxDate)   endDate = new Date(maxDate);
+    if (endDate < startDate) endDate = new Date(startDate);
+  } else {
+    // Legacy offset/days support
+    const offset = Math.max(0, Math.min(parseInt(url.searchParams.get('offset') || '0') || 0, 15));
+    const numDays = Math.max(1, Math.min(parseInt(url.searchParams.get('days') || '7') || 7, 16 - offset));
+    startDate = new Date(today); startDate.setDate(startDate.getDate() + offset);
+    endDate = new Date(startDate); endDate.setDate(endDate.getDate() + numDays - 1);
+  }
 
   const startStr = startDate.toISOString().slice(0, 10);
   const endStr = endDate.toISOString().slice(0, 10);
+  const numDays = Math.round((endDate - startDate) / 86400000) + 1;
 
   // Load spots from D1
   const { results: spots } = await env.DB.prepare(
@@ -139,6 +156,7 @@ export async function onRequestGet(context) {
     cache_age: Math.round(maxCacheAge),
     all_cached: allCached,
     num_days: numDays,
-    start_offset: offset,
+    start_date: startStr,
+    end_date: endStr,
   });
 }

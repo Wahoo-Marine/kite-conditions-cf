@@ -24,25 +24,18 @@
 </div>
 
 <div class="container" id="app" style="display:none;">
-  <!-- Range Picker -->
+  <!-- Date Range Picker -->
   <div class="range-picker" id="range-picker">
-    <span class="range-label">Days:</span>
-    <button class="range-btn" data-days="3">3 d</button>
-    <button class="range-btn" data-days="5">5 d</button>
-    <button class="range-btn active" data-days="7">7 d</button>
-    <button class="range-btn" data-days="10">10 d</button>
-    <button class="range-btn" data-days="14">14 d</button>
-    <div class="range-offset">
-      <label for="offset-sel">Start:</label>
-      <select id="offset-sel">
-        <option value="0">Today</option>
-        <option value="1">Tomorrow</option>
-        <option value="2">+2 days</option>
-        <option value="3">+3 days</option>
-        <option value="5">+5 days</option>
-        <option value="7">+7 days</option>
-      </select>
+    <div class="range-field">
+      <label for="start-date">From</label>
+      <input type="date" id="start-date">
     </div>
+    <span class="range-dash">–</span>
+    <div class="range-field">
+      <label for="end-date">To</label>
+      <input type="date" id="end-date">
+    </div>
+    <button class="range-btn" id="btn-today" title="Reset to today → 7 days">Today</button>
     <span class="cache-badge" id="cache-badge" style="display:none;margin-left:auto;"></span>
   </div>
 
@@ -66,8 +59,17 @@
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
-let currentDays = parseInt(localStorage.getItem('kite_days') || '7');
-let currentOffset = parseInt(localStorage.getItem('kite_offset') || '0');
+// ── Date helpers ─────────────────────
+function fmtDate(d) { return d.toISOString().slice(0, 10); }
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function clampDate(d, lo, hi) { return d < lo ? lo : d > hi ? hi : d; }
+
+const todayDate = new Date();
+todayDate.setHours(0, 0, 0, 0);
+const maxDate = addDays(todayDate, 15);
+
+let startDate = localStorage.getItem('kite_start') || fmtDate(todayDate);
+let endDate   = localStorage.getItem('kite_end')   || fmtDate(addDays(todayDate, 6));
 
 // ── Init ──────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -77,32 +79,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Range Picker ──────────────────────
 function initRangePicker() {
-  $$('.range-btn').forEach(btn => {
-    const d = parseInt(btn.dataset.days);
-    btn.classList.toggle('active', d === currentDays);
-    btn.addEventListener('click', () => {
-      currentDays = d;
-      localStorage.setItem('kite_days', d);
-      $$('.range-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      loadDashboard();
-    });
+  const sEl = $('#start-date');
+  const eEl = $('#end-date');
+  const minStr = fmtDate(todayDate);
+  const maxStr = fmtDate(maxDate);
+
+  sEl.min = minStr; sEl.max = maxStr;
+  eEl.min = minStr; eEl.max = maxStr;
+
+  // Clamp stored dates into valid range
+  startDate = fmtDate(clampDate(new Date(startDate + 'T00:00:00'), todayDate, maxDate));
+  endDate   = fmtDate(clampDate(new Date(endDate   + 'T00:00:00'), todayDate, maxDate));
+  if (endDate < startDate) endDate = startDate;
+
+  sEl.value = startDate;
+  eEl.value = endDate;
+
+  sEl.addEventListener('change', () => {
+    startDate = sEl.value;
+    if (endDate < startDate) { endDate = startDate; eEl.value = endDate; }
+    persist(); loadDashboard();
+  });
+  eEl.addEventListener('change', () => {
+    endDate = eEl.value;
+    if (startDate > endDate) { startDate = endDate; sEl.value = startDate; }
+    persist(); loadDashboard();
   });
 
-  const sel = $('#offset-sel');
-  sel.value = currentOffset;
-  sel.addEventListener('change', () => {
-    currentOffset = parseInt(sel.value);
-    localStorage.setItem('kite_offset', currentOffset);
-    loadDashboard();
+  $('#btn-today').addEventListener('click', () => {
+    startDate = fmtDate(todayDate);
+    endDate   = fmtDate(addDays(todayDate, 6));
+    sEl.value = startDate;
+    eEl.value = endDate;
+    persist(); loadDashboard();
   });
+}
+
+function persist() {
+  localStorage.setItem('kite_start', startDate);
+  localStorage.setItem('kite_end', endDate);
 }
 
 // ── Load Dashboard ────────────────────
 async function loadDashboard() {
   showLoading(true);
   try {
-    const res = await fetch(`/api/forecast?offset=${currentOffset}&days=${currentDays}`);
+    const res = await fetch(`/api/forecast?start=${startDate}&end=${endDate}`);
     if (!res.ok) throw new Error('Failed to load forecast');
     const data = await res.json();
     renderGrid(data);
