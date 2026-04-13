@@ -422,14 +422,17 @@ async function initTwitchHLS(channel, idx) {
   try {
     if (loadingEl) loadingEl.textContent = 'Connecting to stream…';
 
-    const resp = await fetch(`/api/twitch-hls/${encodeURIComponent(channel)}`);
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error || `HTTP ${resp.status}`);
+    // The Worker returns the master m3u8 directly (proxied, same-origin).
+    // All quality-level and segment URLs inside it are also routed through
+    // our /api/twitch-proxy endpoint, so there are no CORS issues.
+    const hlsUrl = `/api/twitch-hls/${encodeURIComponent(channel)}`;
+
+    // Verify the Worker responds before handing to HLS player
+    const check = await fetch(hlsUrl);
+    if (!check.ok) {
+      const body = await check.text();
+      throw new Error(body || `HTTP ${check.status}`);
     }
-    const data = await resp.json();
-    const hlsUrl = data.hls_url;
-    if (!hlsUrl) throw new Error('No HLS URL returned');
 
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Native HLS (Safari / iOS) — plays directly
