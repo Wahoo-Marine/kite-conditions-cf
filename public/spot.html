@@ -197,6 +197,22 @@ function renderSpot(data) {
             <span class="live-badge"><span class="live-dot"></span> LIVE</span>
           </div>
         </div>`;
+      } else if (cam.youtube) {
+        // YouTube live stream embed
+        wcHTML += `<div class="webcam-card">
+          <div class="webcam-iframe-wrap">
+            <iframe
+              src="https://www.youtube.com/embed/${encodeURIComponent(cam.youtube)}?autoplay=1&mute=1&rel=0&modestbranding=1"
+              allowfullscreen
+              allow="autoplay; encrypted-media"
+              style="border:0;"
+            ></iframe>
+          </div>
+          <div class="webcam-footer">
+            <span class="webcam-label">${esc(cam.label)}</span>
+            <span class="live-badge"><span class="live-dot"></span> LIVE</span>
+          </div>
+        </div>`;
       } else if (cam.hazcam) {
         // Hazcams image snapshot (auto-refreshing weather cams)
         const imgSrc = `https://data.hazcams.com/thumbnails/${encodeURIComponent(cam.hazcam)}/large.webp?ts=${Date.now()}`;
