@@ -1,0 +1,17 @@
+{
+  "name": "kite-conditions-cf",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kiteboarding forecast dashboard on Cloudflare Pages + Workers",
+  "scripts": {
+    "dev": "npx wrangler pages dev ./public --port 5555",
+    "deploy": "npx wrangler pages deploy ./public",
+    "db:migrate": "npx wrangler d1 execute kite-conditions-db --file=./schema.sql",
+    "db:seed": "npx wrangler d1 execute kite-conditions-db --file=./seed.sql",
+    "db:migrate:local": "npx wrangler d1 execute kite-conditions-db --local --file=./schema.sql",
+    "db:seed:local": "npx wrangler d1 execute kite-conditions-db --local --file=./seed.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.82.1"
+  }
+}

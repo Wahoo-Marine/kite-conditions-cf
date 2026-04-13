@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🪁 Settings — Kite Conditions</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header>
+  <h1>🪁 Kite Conditions</h1>
+  <div class="subtitle">Manage your spots</div>
+</header>
+
+<nav>
+  <a href="/">Dashboard</a>
+  <a href="/settings" class="active">Settings</a>
+</nav>
+
+<div class="container settings-width" id="app">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+    <h2 style="font-size:1.3rem;color:var(--accent);">📍 Your Spots</h2>
+    <button class="btn btn-add" id="btn-add-spot">+ Add Spot</button>
+  </div>
+
+  <!-- Add / Edit Form (hidden by default) -->
+  <div class="spot-form" id="spot-form" style="display:none;">
+    <h3 id="form-title">Add New Spot</h3>
+    <div class="lookup-row">
+      <div class="form-group">
+        <label for="geo-input">Search location</label>
+        <input type="text" id="geo-input" placeholder="e.g. Key West, FL">
+      </div>
+      <button class="btn-lookup" id="btn-geo" type="button">🔍 Lookup</button>
+    </div>
+    <div class="geo-results" id="geo-results" style="display:none;"></div>
+
+    <div class="form-row" style="margin-top:0.8rem;">
+      <div class="form-group">
+        <label for="spot-name">Name</label>
+        <input type="text" id="spot-name" placeholder="Spot name">
+      </div>
+      <div class="form-group">
+        <label for="spot-lat">Latitude</label>
+        <input type="number" id="spot-lat" step="any" placeholder="24.5551">
+      </div>
+      <div class="form-group">
+        <label for="spot-lon">Longitude</label>
+        <input type="number" id="spot-lon" step="any" placeholder="-81.7800">
+      </div>
+    </div>
+
+    <div id="webcam-fields"></div>
+    <button class="btn btn-edit" id="btn-add-cam" type="button" style="margin-bottom:0.8rem;font-size:.72rem;">+ Add Webcam</button>
+
+    <div class="form-actions">
+      <button class="btn btn-save" id="btn-save">Save</button>
+      <button class="btn btn-cancel" id="btn-cancel">Cancel</button>
+    </div>
+    <input type="hidden" id="edit-id" value="">
+  </div>
+
+  <!-- Spot List -->
+  <div class="spot-list" id="spot-list"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<footer>
+  Powered by <a href="https://open-meteo.com/" target="_blank">Open-Meteo</a>
+</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+let spots = [];
+let geoTimeout = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadSpots();
+  bindEvents();
+});
+
+// ── Bind Events ───────────────────────
+function bindEvents() {
+  $('#btn-add-spot').addEventListener('click', () => showForm());
+  $('#btn-cancel').addEventListener('click', () => hideForm());
+  $('#btn-save').addEventListener('click', () => saveSpot());
+  $('#btn-geo').addEventListener('click', () => geoLookup());
+  $('#btn-add-cam').addEventListener('click', () => addWebcamField());
+
+  // Enter on geo input
+  $('#geo-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); geoLookup(); }
+  });
+}
+
+// ── Load Spots ────────────────────────
+async function loadSpots() {
+  try {
+    const res = await fetch('/api/spots');
+    spots = await res.json();
+    renderSpots();
+  } catch (err) {
+    console.error(err);
+    toast('Failed to load spots', true);
+  }
+}
+
+// ── Render Spots ──────────────────────
+function renderSpots() {
+  const list = $('#spot-list');
+  if (spots.length === 0) {
+    list.innerHTML = '<div class="empty-state"><div class="emoji">🪁</div><p>No spots yet. Add your first kite spot!</p></div>';
+    return;
+  }
+
+  let html = '';
+  spots.forEach(s => {
+    const cams = Array.isArray(s.webcams) ? s.webcams : [];
+    const camCount = cams.length;
+    const camBadge = camCount > 0 ? ` <span style="font-size:.7rem;color:var(--text-muted);">📹 ${camCount} cam${camCount > 1 ? 's' : ''}</span>` : '';
+    html += `<div class="spot-card" data-id="${s.id}">
+      <div class="spot-info">
+        <div class="spot-name">${esc(s.name)}${camBadge}</div>
+        <div class="spot-coords">${s.lat.toFixed(4)}°, ${s.lon.toFixed(4)}°</div>
+      </div>
+      <div class="spot-actions">
+        <button class="btn btn-edit" onclick="editSpot('${s.id}')">Edit</button>
+        <button class="btn btn-delete" onclick="deleteSpot('${s.id}', '${esc(s.name)}')">Delete</button>
+      </div>
+    </div>`;
+  });
+  list.innerHTML = html;
+}
+
+// ── Show / Hide Form ──────────────────
+function showForm(spot = null) {
+  $('#spot-form').style.display = 'block';
+  $('#form-title').textContent = spot ? 'Edit Spot' : 'Add New Spot';
+  $('#spot-name').value = spot ? spot.name : '';
+  $('#spot-lat').value = spot ? spot.lat : '';
+  $('#spot-lon').value = spot ? spot.lon : '';
+  $('#edit-id').value = spot ? spot.id : '';
+  $('#geo-results').style.display = 'none';
+  $('#geo-input').value = '';
+
+  // Webcam fields
+  const wcContainer = $('#webcam-fields');
+  wcContainer.innerHTML = '';
+  if (spot && spot.webcams) {
+    const cams = Array.isArray(spot.webcams) ? spot.webcams : JSON.parse(spot.webcams);
+    cams.forEach(cam => addWebcamField(cam.oid, cam.label));
+  }
+
+  setTimeout(() => spot ? $('#spot-name').focus() : $('#geo-input').focus(), 100);
+}
+
+function hideForm() {
+  $('#spot-form').style.display = 'none';
+  $('#edit-id').value = '';
+  $('#webcam-fields').innerHTML = '';
+}
+
+// ── Webcam Fields ─────────────────────
+function addWebcamField(oid = '', label = '') {
+  const container = $('#webcam-fields');
+  const row = document.createElement('div');
+  row.className = 'form-row webcam-row';
+  row.innerHTML = `
+    <div class="form-group">
+      <label>Webcam OID</label>
+      <input type="text" class="cam-oid" value="${esc(oid)}" placeholder="EMB_XXXX000000XX">
+    </div>
+    <div class="form-group">
+      <label>Label</label>
+      <input type="text" class="cam-label" value="${esc(label)}" placeholder="Main Camera">
+    </div>
+    <button class="btn btn-delete" type="button" style="align-self:flex-end;margin-bottom:0.8rem;" onclick="this.closest('.webcam-row').remove()">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+// ── Geocode Lookup ────────────────────
+async function geoLookup() {
+  const q = $('#geo-input').value.trim();
+  if (!q) return;
+  const btn = $('#btn-geo');
+  btn.disabled = true;
+  btn.textContent = '⏳';
+
+  try {
+    const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+
+    if (!data.results || data.results.length === 0) {
+      toast('No results found', true);
+      return;
+    }
+
+    const container = $('#geo-results');
+    container.style.display = 'block';
+    let html = '';
+    data.results.forEach(r => {
+      const label = [r.name, r.admin1, r.country].filter(Boolean).join(', ');
+      html += `<div class="geo-item" onclick="selectGeo('${esc(r.name)}', ${r.latitude}, ${r.longitude})">
+        <div>${label}</div>
+        <div class="geo-coords">${r.latitude.toFixed(4)}°, ${r.longitude.toFixed(4)}°</div>
+      </div>`;
+    });
+    container.innerHTML = html;
+  } catch (err) {
+    toast('Geocode lookup failed', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 Lookup';
+  }
+}
+
+function selectGeo(name, lat, lon) {
+  $('#spot-name').value = name;
+  $('#spot-lat').value = lat;
+  $('#spot-lon').value = lon;
+  $('#geo-results').style.display = 'none';
+}
+
+// ── Save Spot ─────────────────────────
+async function saveSpot() {
+  const name = $('#spot-name').value.trim();
+  const lat = parseFloat($('#spot-lat').value);
+  const lon = parseFloat($('#spot-lon').value);
+  const editId = $('#edit-id').value;
+
+  if (!name || isNaN(lat) || isNaN(lon)) {
+    toast('Please fill in name, latitude, and longitude', true);
+    return;
+  }
+
+  // Gather webcams
+  const webcams = [];
+  $$('.webcam-row').forEach(row => {
+    const oid = row.querySelector('.cam-oid').value.trim();
+    const label = row.querySelector('.cam-label').value.trim();
+    if (oid) webcams.push({ oid, label: label || 'Camera' });
+  });
+
+  const body = { name, lat, lon, webcams };
+
+  try {
+    let res;
+    if (editId) {
+      res = await fetch(`/api/spots/${editId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } else {
+      res = await fetch('/api/spots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    }
+
+    if (!res.ok) throw new Error('Save failed');
+    toast(editId ? 'Spot updated!' : 'Spot added!');
+    hideForm();
+    loadSpots();
+  } catch (err) {
+    toast('Failed to save spot', true);
+  }
+}
+
+// ── Edit Spot ─────────────────────────
+function editSpot(id) {
+  const spot = spots.find(s => s.id === id);
+  if (spot) showForm(spot);
+}
+
+// ── Delete Spot ───────────────────────
+async function deleteSpot(id, name) {
+  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+
+  try {
+    const res = await fetch(`/api/spots/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Delete failed');
+    toast('Spot deleted');
+    loadSpots();
+  } catch (err) {
+    toast('Failed to delete spot', true);
+  }
+}
+
+// ── Helpers ───────────────────────────
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function toast(msg, isError = false) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => t.className = 'toast', 3000);
+}
+</script>
+</body>
+</html>
