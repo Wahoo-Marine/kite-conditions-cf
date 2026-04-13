@@ -4,7 +4,7 @@
  */
 import {
   fetchForecast, processForecast, ratingLabel, ratingEmoji,
-  degreesToCompass,
+  degreesToCompass, fetchTides, processTides,
 } from '../lib/kite-logic.js';
 
 export async function onRequestGet(context) {
@@ -53,10 +53,34 @@ export async function onRequestGet(context) {
   // Fetch all spots in parallel
   const fetches = spots.map(async (spot) => {
     try {
-      const { data, cacheAge } = await fetchForecast(spot.lat, spot.lon, env.CACHE);
-      cacheAges.push(cacheAge);
+      // Fetch weather and tides in parallel
+      const [forecastResult, tidesResult] = await Promise.allSettled([
+        fetchForecast(spot.lat, spot.lon, env.CACHE),
+        fetchTides(spot.lat, spot.lon, env.CACHE),
+      ]);
+
+      let data, cacheAge = 0;
+      if (forecastResult.status === 'fulfilled') {
+        data = forecastResult.value.data;
+        cacheAge = forecastResult.value.cacheAge;
+        cacheAges.push(cacheAge);
+      } else {
+        throw forecastResult.reason || new Error('Forecast failed');
+      }
+
       const days = processForecast(data, startStr, endStr);
       const tz = data.timezone || 'UTC';
+
+      // Merge tide data into days
+      if (tidesResult.status === 'fulfilled') {
+        const tides = processTides(tidesResult.value.data, startStr, endStr);
+        const tideMap = {};
+        tides.forEach(t => { tideMap[t.date] = t; });
+        days.forEach(d => {
+          const td = tideMap[d.date];
+          d.tide = td ? { hourly: td.hourly, extremes: td.extremes } : null;
+        });
+      }
 
       // Collect best days
       for (const day of days) {

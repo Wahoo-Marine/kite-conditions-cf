@@ -267,6 +267,21 @@ function renderSpot(data) {
     panelsHTML += `<div class="stat"><div class="stat-label">Rating</div><div class="rating-badge ${rc}">${d.rating_emoji || ''} ${d.rating_label || ''}</div></div>`;
     panelsHTML += '</div>';
 
+    // Tide Chart
+    if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
+      panelsHTML += '<div class="tide-chart-section">';
+      panelsHTML += '<div class="tide-chart-header">🌊 Tides</div>';
+      panelsHTML += `<canvas class="tide-canvas" id="tide-canvas-${i}" width="800" height="120"></canvas>`;
+      panelsHTML += '<div class="tide-extremes">';
+      (d.tide.extremes || []).forEach(e => {
+        const cls = e.type === 'H' ? 'tide-high' : 'tide-low';
+        const label = e.type === 'H' ? '▲ High' : '▼ Low';
+        panelsHTML += `<span class="tide-extreme ${cls}">${label} ${e.time} (${e.level}m)</span>`;
+      });
+      panelsHTML += '</div>';
+      panelsHTML += '</div>';
+    }
+
     // Hourly Table
     panelsHTML += '<div style="overflow-x:auto;">';
     panelsHTML += '<table class="hourly-table"><thead><tr>';
@@ -312,6 +327,13 @@ function renderSpot(data) {
     });
   });
 
+  // Render tide charts for each day that has tide data
+  days.forEach((d, i) => {
+    if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
+      renderTideChart(i, d.tide);
+    }
+  });
+
   // Init live wind station if available
   initWindStation();
 }
@@ -330,6 +352,150 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 function showLoading(on) {
   $('#loading-overlay').classList.toggle('hidden', !on);
   $('#app').style.display = on ? 'none' : 'block';
+}
+
+// ── Tide Chart ────────────────────────
+function renderTideChart(dayIdx, tide) {
+  const canvas = document.getElementById(`tide-canvas-${dayIdx}`);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const W = rect.width || 800;
+  const H = 120;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(dpr, dpr);
+
+  ctx.clearRect(0, 0, W, H);
+
+  const hourly = tide.hourly;
+  const extremes = tide.extremes || [];
+
+  const PAD_LEFT = 36;
+  const PAD_RIGHT = 12;
+  const PAD_TOP = 12;
+  const PAD_BOTTOM = 22;
+  const chartW = W - PAD_LEFT - PAD_RIGHT;
+  const chartH = H - PAD_TOP - PAD_BOTTOM;
+
+  const levels = hourly.map(h => h.level);
+  const minLvl = Math.min(...levels) - 0.05;
+  const maxLvl = Math.max(...levels) + 0.05;
+  const range = maxLvl - minLvl || 0.1;
+
+  // Parse "HH:MM" to fractional hours
+  function timeToHours(t) {
+    const [h, m] = t.split(':').map(Number);
+    return h + m / 60;
+  }
+
+  function xPos(timeStr) {
+    return PAD_LEFT + (timeToHours(timeStr) / 24) * chartW;
+  }
+  function yPos(level) {
+    return PAD_TOP + chartH - ((level - minLvl) / range) * chartH;
+  }
+
+  // Background
+  ctx.fillStyle = 'rgba(26, 39, 51, 0.6)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.font = '9px -apple-system, sans-serif';
+  ctx.fillStyle = '#8899a6';
+
+  const step = range > 0.5 ? 0.2 : 0.1;
+  const gridStart = Math.ceil(minLvl / step) * step;
+  for (let v = gridStart; v <= maxLvl; v += step) {
+    const y = yPos(v);
+    ctx.beginPath();
+    ctx.moveTo(PAD_LEFT, y);
+    ctx.lineTo(W - PAD_RIGHT, y);
+    ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.fillText(v.toFixed(1) + 'm', PAD_LEFT - 4, y + 3);
+  }
+
+  // Zero line (mean sea level)
+  if (minLvl <= 0 && maxLvl >= 0) {
+    ctx.beginPath();
+    ctx.moveTo(PAD_LEFT, yPos(0));
+    ctx.lineTo(W - PAD_RIGHT, yPos(0));
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Tide curve — filled area
+  const areaPath = new Path2D();
+  areaPath.moveTo(xPos(hourly[0].time), yPos(hourly[0].level));
+  for (let i = 1; i < hourly.length; i++) {
+    areaPath.lineTo(xPos(hourly[i].time), yPos(hourly[i].level));
+  }
+  areaPath.lineTo(xPos(hourly[hourly.length - 1].time), yPos(minLvl));
+  areaPath.lineTo(xPos(hourly[0].time), yPos(minLvl));
+  areaPath.closePath();
+
+  const grad = ctx.createLinearGradient(0, PAD_TOP, 0, PAD_TOP + chartH);
+  grad.addColorStop(0, 'rgba(56, 189, 248, 0.25)');
+  grad.addColorStop(1, 'rgba(56, 189, 248, 0.03)');
+  ctx.fillStyle = grad;
+  ctx.fill(areaPath);
+
+  // Tide curve line
+  ctx.beginPath();
+  ctx.moveTo(xPos(hourly[0].time), yPos(hourly[0].level));
+  for (let i = 1; i < hourly.length; i++) {
+    ctx.lineTo(xPos(hourly[i].time), yPos(hourly[i].level));
+  }
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Extreme markers
+  extremes.forEach(e => {
+    const x = xPos(e.time);
+    const y = yPos(e.level);
+    const isHigh = e.type === 'H';
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = isHigh ? '#22c55e' : '#ef4444';
+    ctx.fill();
+
+    // Label
+    ctx.font = 'bold 9px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = isHigh ? '#22c55e' : '#ef4444';
+    const labelY = isHigh ? y - 7 : y + 12;
+    ctx.fillText(`${isHigh ? '▲' : '▼'} ${e.level}m`, x, labelY);
+  });
+
+  // Time labels on x-axis
+  ctx.fillStyle = '#8899a6';
+  ctx.font = '9px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  for (let h = 0; h <= 24; h += 6) {
+    const timeStr = String(h).padStart(2, '0') + ':00';
+    const x = PAD_LEFT + (h / 24) * chartW;
+    ctx.fillText(h === 0 ? '12a' : h === 6 ? '6a' : h === 12 ? '12p' : h === 18 ? '6p' : '12a', x, H - 5);
+    // Tick
+    ctx.beginPath();
+    ctx.moveTo(x, PAD_TOP + chartH);
+    ctx.lineTo(x, PAD_TOP + chartH + 3);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 }
 
 // ── Live Wind Station ─────────────────

@@ -4,6 +4,7 @@
  */
 import {
   fetchForecast, processForecast, getCurrentConditions,
+  fetchTides, processTides,
 } from '../../lib/kite-logic.js';
 
 export async function onRequestGet(context) {
@@ -40,12 +41,34 @@ export async function onRequestGet(context) {
   let cacheAge = 0;
   let tz = '';
 
+  let tides = [];
+
   try {
-    const result = await fetchForecast(spot.lat, spot.lon, env.CACHE);
-    cacheAge = result.cacheAge;
-    tz = result.data.timezone || 'UTC';
-    days = processForecast(result.data, startStr, endStr);
-    current = getCurrentConditions(result.data);
+    // Fetch weather and tides in parallel
+    const [forecastResult, tidesResult] = await Promise.allSettled([
+      fetchForecast(spot.lat, spot.lon, env.CACHE),
+      fetchTides(spot.lat, spot.lon, env.CACHE),
+    ]);
+
+    if (forecastResult.status === 'fulfilled') {
+      cacheAge = forecastResult.value.cacheAge;
+      tz = forecastResult.value.data.timezone || 'UTC';
+      days = processForecast(forecastResult.value.data, startStr, endStr);
+      current = getCurrentConditions(forecastResult.value.data);
+    } else {
+      error = forecastResult.reason?.message || 'Forecast fetch failed';
+    }
+
+    if (tidesResult.status === 'fulfilled') {
+      tides = processTides(tidesResult.value.data, startStr, endStr);
+      // Merge tide data into matching days
+      const tideMap = {};
+      tides.forEach(t => { tideMap[t.date] = t; });
+      days.forEach(d => {
+        const td = tideMap[d.date];
+        d.tide = td ? { hourly: td.hourly, extremes: td.extremes } : null;
+      });
+    }
   } catch (e) {
     error = e.message;
   }

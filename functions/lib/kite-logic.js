@@ -9,6 +9,7 @@ export const WIND_MARGINAL_MIN = 12;
 export const WIND_MARGINAL_MAX = 35;
 
 export const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
+export const MARINE_API_URL = 'https://marine-api.open-meteo.com/v1/marine';
 export const GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 
 export const HOURLY_PARAMS = [
@@ -283,6 +284,142 @@ export function processForecast(rawData, startDate, endDate) {
   }
 
   return days;
+}
+
+/* ────────────────────────────────────────
+ * Tides  (Open-Meteo Marine API)
+ * ──────────────────────────────────────── */
+
+/**
+ * Fetch tide data (sea_level_height_msl) from Open-Meteo Marine API.
+ * Returns { data, cacheAge }.
+ */
+export async function fetchTides(lat, lon, kvCache) {
+  const cacheKey = `tides:${lat.toFixed(4)},${lon.toFixed(4)}`;
+
+  if (kvCache) {
+    const cached = await kvCache.get(cacheKey, { type: 'json' });
+    if (cached) {
+      const age = Math.floor(Date.now() / 1000) - cached.ts;
+      if (age < CACHE_TTL) {
+        return { data: cached.data, cacheAge: age };
+      }
+    }
+  }
+
+  const params = new URLSearchParams({
+    latitude: lat,
+    longitude: lon,
+    hourly: 'sea_level_height_msl',
+    timezone: 'auto',
+    forecast_days: 16,
+  });
+
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 2 ** attempt * 1000));
+      const resp = await fetch(`${MARINE_API_URL}?${params}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!resp.ok) throw new Error(`Marine HTTP ${resp.status}`);
+      const data = await resp.json();
+
+      if (kvCache) {
+        await kvCache.put(cacheKey, JSON.stringify({ ts: Math.floor(Date.now() / 1000), data }), {
+          expirationTtl: CACHE_TTL * 2,
+        });
+      }
+      return { data, cacheAge: 0 };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Process raw marine data into per-day tide info.
+ * Returns array of { date, hourly: [{time,level}], extremes: [{time,level,type:'H'|'L'}] }
+ */
+export function processTides(rawMarine, startDate, endDate) {
+  const times = rawMarine?.hourly?.time || [];
+  const levels = rawMarine?.hourly?.sea_level_height_msl || [];
+
+  if (times.length === 0) return [];
+
+  // Build requested date set
+  const reqDates = new Set();
+  if (startDate && endDate) {
+    let d = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    while (d <= end) {
+      reqDates.add(d.toISOString().slice(0, 10));
+      d.setDate(d.getDate() + 1);
+    }
+  }
+
+  // Group by date
+  const daysMap = new Map();
+  for (let i = 0; i < times.length; i++) {
+    const level = levels[i];
+    if (level == null) continue;
+    const dateStr = times[i].slice(0, 10);
+    if (reqDates.size > 0 && !reqDates.has(dateStr)) continue;
+    if (!daysMap.has(dateStr)) daysMap.set(dateStr, []);
+    daysMap.get(dateStr).push({ time: times[i].slice(11, 16), level, idx: i });
+  }
+
+  const result = [];
+
+  for (const [dateStr, entries] of daysMap) {
+    // Hourly readings for chart
+    const hourly = entries.map(e => ({ time: e.time, level: +(e.level.toFixed(2)) }));
+
+    // Find local extremes (H/L) — simple peak/trough detection
+    const extremes = [];
+    for (let i = 1; i < entries.length - 1; i++) {
+      const prev = entries[i - 1].level;
+      const curr = entries[i].level;
+      const next = entries[i + 1].level;
+
+      if (curr >= prev && curr >= next && curr !== prev) {
+        extremes.push({ time: entries[i].time, level: +(curr.toFixed(2)), type: 'H' });
+      } else if (curr <= prev && curr <= next && curr !== prev) {
+        extremes.push({ time: entries[i].time, level: +(curr.toFixed(2)), type: 'L' });
+      }
+    }
+
+    // Also check first and last hour against neighbors from adjacent days
+    // (edge detection) — keep it simple: just mark if clearly a peak/trough
+    if (entries.length >= 2) {
+      const first = entries[0], second = entries[1];
+      if (first.level > second.level) {
+        extremes.unshift({ time: first.time, level: +(first.level.toFixed(2)), type: 'H' });
+      } else if (first.level < second.level) {
+        extremes.unshift({ time: first.time, level: +(first.level.toFixed(2)), type: 'L' });
+      }
+
+      const last = entries[entries.length - 1], secondLast = entries[entries.length - 2];
+      if (last.level > secondLast.level) {
+        extremes.push({ time: last.time, level: +(last.level.toFixed(2)), type: 'H' });
+      } else if (last.level < secondLast.level) {
+        extremes.push({ time: last.time, level: +(last.level.toFixed(2)), type: 'L' });
+      }
+    }
+
+    // Deduplicate extremes (no consecutive same-type)
+    const cleaned = [];
+    for (const e of extremes) {
+      if (cleaned.length === 0 || cleaned[cleaned.length - 1].type !== e.type) {
+        cleaned.push(e);
+      }
+    }
+
+    result.push({ date: dateStr, hourly, extremes: cleaned });
+  }
+
+  return result;
 }
 
 /**

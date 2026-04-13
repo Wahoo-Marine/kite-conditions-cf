@@ -187,6 +187,17 @@ function renderGrid(data) {
       bodyHTML += `<div class="gc-temp">${wIcon} <span style="${tempColor}">${Math.round(sd.avg_temp)}°F</span></div>`;
       bodyHTML += `<div class="gc-rating ${rClass}">${sd.rating_label}</div>`;
 
+      // Tide H/L summary (compact)
+      if (sd.tide && sd.tide.extremes && sd.tide.extremes.length > 0) {
+        bodyHTML += '<div class="gc-tide">';
+        sd.tide.extremes.slice(0, 4).forEach(e => {
+          const icon = e.type === 'H' ? '▲' : '▼';
+          const cls = e.type === 'H' ? 'tide-hi' : 'tide-lo';
+          bodyHTML += `<span class="${cls}">${icon}${e.time.slice(0,5)}</span> `;
+        });
+        bodyHTML += '</div>';
+      }
+
       // Hour dots
       if (sd.hours && sd.hours.length > 0) {
         bodyHTML += '<div class="hour-dots">';
