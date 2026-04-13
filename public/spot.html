@@ -226,13 +226,13 @@ function renderSpot(data) {
           </div>
         </div>`;
       } else if (cam.oid) {
-        // Ozolio thumbnail with click-through to live video viewer page
+        // Ozolio fast-refreshing snapshot with click-through to fullscreen viewer
         const imgSrc = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
         const camViewerUrl = `/cam?oid=${encodeURIComponent(cam.oid)}&label=${encodeURIComponent(cam.label)}`;
         wcHTML += `<div class="webcam-card">
-          <a class="webcam-img-wrap" href="${camViewerUrl}" target="_blank" rel="noopener" title="Open live video">
+          <a class="webcam-img-wrap" href="${camViewerUrl}" target="_blank" rel="noopener" title="View fullscreen">
             <img id="wc-img-${idx}" src="${imgSrc}" alt="${esc(cam.label)}" loading="lazy">
-            <div class="webcam-overlay"><div class="webcam-play">▶</div><div style="color:#fff;font-size:.75rem;margin-top:.3rem;">Open live video</div></div>
+            <div class="webcam-overlay"><div class="webcam-play">⛶</div><div style="color:#fff;font-size:.75rem;margin-top:.3rem;">Fullscreen</div></div>
           </a>
           <div class="webcam-footer">
             <span class="webcam-label">${esc(cam.label)}</span>
@@ -244,21 +244,29 @@ function renderSpot(data) {
     wcHTML += '</div>';
     wcSection.innerHTML = wcHTML;
 
-    // Auto-refresh Ozolio & Hazcam thumbnail images every 60s
-    const refreshableCams = webcams.filter(c => c.oid || c.hazcam);
-    if (refreshableCams.length > 0) {
-      const refreshTimer = setInterval(() => {
+    // Auto-refresh Ozolio snapshots every 5s for near-live feel
+    const ozolioCams = webcams.filter(c => c.oid);
+    if (ozolioCams.length > 0) {
+      const ozoTimer = setInterval(() => {
         webcams.forEach((cam, idx) => {
+          if (!cam.oid) return;
           const img = document.getElementById(`wc-img-${idx}`);
-          if (!img) return;
-          if (cam.oid) {
-            img.src = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
-          } else if (cam.hazcam) {
-            img.src = `https://data.hazcams.com/thumbnails/${encodeURIComponent(cam.hazcam)}/large.webp?ts=${Date.now()}`;
-          }
+          if (img) img.src = `https://relay.ozolio.com/pub.api?cmd=poster&oid=${encodeURIComponent(cam.oid)}&ts=${Date.now()}`;
+        });
+      }, 5000);
+      webcamTimers.push(ozoTimer);
+    }
+    // Auto-refresh Hazcam thumbnails every 60s
+    const hazcamCams = webcams.filter(c => c.hazcam);
+    if (hazcamCams.length > 0) {
+      const hzTimer = setInterval(() => {
+        webcams.forEach((cam, idx) => {
+          if (!cam.hazcam) return;
+          const img = document.getElementById(`wc-img-${idx}`);
+          if (img) img.src = `https://data.hazcams.com/thumbnails/${encodeURIComponent(cam.hazcam)}/large.webp?ts=${Date.now()}`;
         });
       }, 60000);
-      webcamTimers.push(refreshTimer);
+      webcamTimers.push(hzTimer);
     }
   } else {
     wcSection.style.display = 'none';

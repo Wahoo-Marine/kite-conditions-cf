@@ -6,23 +6,26 @@
   <title>📹 Live Webcam</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #0f1923; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; }
-    .cam-header { padding: 0.6rem 1rem; background: #1a2332; border-bottom: 1px solid #2d3748; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    body { background: #000; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    .cam-header { padding: 0.5rem 1rem; background: rgba(15,25,35,0.9); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; position: absolute; top: 0; left: 0; right: 0; z-index: 10; }
     .cam-header a { color: #38bdf8; text-decoration: none; font-size: 0.85rem; font-weight: 600; }
     .cam-header a:hover { text-decoration: underline; }
-    .cam-title { font-size: 0.95rem; font-weight: 700; }
-    .cam-wrap { flex: 1; position: relative; }
-    .cam-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .cam-title { font-size: 0.9rem; font-weight: 700; }
+    .cam-live { display: flex; align-items: center; gap: 0.3rem; font-size: 0.65rem; font-weight: 700; color: #22c55e; text-transform: uppercase; }
+    .cam-live .dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .cam-img { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .cam-img img { max-width: 100%; max-height: 100vh; object-fit: contain; }
   </style>
 </head>
 <body>
   <div class="cam-header">
     <a href="javascript:history.back()">← Back</a>
     <div class="cam-title" id="cam-title">Live Webcam</div>
-    <div style="width:60px;"></div>
+    <div class="cam-live"><span class="dot"></span> LIVE</div>
   </div>
-  <div class="cam-wrap" id="cam-wrap">
-    <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;">Loading webcam…</div>
+  <div class="cam-img">
+    <img id="cam-img" alt="Loading webcam…">
   </div>
   <script>
     const params = new URLSearchParams(location.search);
@@ -30,12 +33,14 @@
     const label = params.get('label');
     if (label) {
       document.getElementById('cam-title').textContent = label;
-      document.title = '📹 ' + label;
+      document.title = '\u{1f4f9} ' + label;
     }
-    if (oid) {
-      document.getElementById('cam-wrap').innerHTML =
-        '<iframe src="https://relay.ozolio.com/pub.cgi?cmd=embed&oid=' + encodeURIComponent(oid) + '" allowfullscreen allow="autoplay; encrypted-media"></iframe>';
+    const img = document.getElementById('cam-img');
+    function refresh() {
+      if (oid) img.src = 'https://relay.ozolio.com/pub.api?cmd=poster&oid=' + encodeURIComponent(oid) + '&ts=' + Date.now();
     }
+    refresh();
+    setInterval(refresh, 5000);
   </script>
 </body>
 </html>
