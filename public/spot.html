@@ -162,11 +162,20 @@ function renderSpot(data) {
     wcHTML += '<div class="webcams-grid">';
     webcams.forEach((cam, idx) => {
       if (cam.twitch) {
-        // Twitch live stream embed
-        const parent = location.hostname;
+        // Twitch live stream embed – need parent for both custom domain & workers.dev
+        const parents = [location.hostname];
+        if (location.hostname !== 'kite-conditions.chip-306.workers.dev')
+          parents.push('kite-conditions.chip-306.workers.dev');
+        const parentParams = parents.map(p => `parent=${p}`).join('&');
         wcHTML += `<div class="webcam-card">
           <div class="webcam-iframe-wrap">
-            <iframe src="https://player.twitch.tv/?channel=${encodeURIComponent(cam.twitch)}&parent=${parent}&muted=true" allowfullscreen frameborder="0"></iframe>
+            <iframe
+              src="https://player.twitch.tv/?channel=${encodeURIComponent(cam.twitch)}&${parentParams}&muted=true&autoplay=true"
+              allowfullscreen
+              allow="autoplay; encrypted-media"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+              style="border:0;"
+            ></iframe>
           </div>
           <div class="webcam-footer">
             <span class="webcam-label">${esc(cam.label)}</span>
