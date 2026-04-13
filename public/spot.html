@@ -178,29 +178,47 @@ function renderSpot(data) {
     wcHTML += '<div class="webcams-grid">';
     webcams.forEach((cam, idx) => {
       if (cam.twitch) {
-        // Twitch live stream embed – need parent for both custom domain & workers.dev
-        const parents = [location.hostname];
-        if (location.hostname !== 'kite-conditions.chip-306.workers.dev')
-          parents.push('kite-conditions.chip-306.workers.dev');
-        const parentParams = parents.map(p => `parent=${p}`).join('&');
-        // Disable autoplay on mobile (iOS requires user interaction)
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        const autoplay = isMobile ? 'false' : 'true';
-        wcHTML += `<div class="webcam-card">
-          <div class="webcam-iframe-wrap">
-            <iframe
-              src="https://player.twitch.tv/?channel=${encodeURIComponent(cam.twitch)}&${parentParams}&muted=true&autoplay=${autoplay}"
-              height="300"
-              width="400"
-              allowfullscreen
-              style="border:0;width:100%;height:100%;"
-            ></iframe>
-          </div>
-          <div class="webcam-footer">
-            <span class="webcam-label">${esc(cam.label)}</span>
-            <span class="live-badge"><span class="live-dot"></span> LIVE</span>
-          </div>
-        </div>`;
+        if (isMobile) {
+          // On mobile (iOS/Android) Twitch iframes are unreliable — show thumbnail + tap to open
+          const thumbUrl = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(cam.twitch)}-440x248.jpg`;
+          const twitchUrl = `https://www.twitch.tv/${encodeURIComponent(cam.twitch)}`;
+          wcHTML += `<div class="webcam-card">
+            <a class="webcam-img-wrap" href="${twitchUrl}" target="_blank" rel="noopener" title="Watch on Twitch">
+              <img src="${thumbUrl}" alt="${esc(cam.label)}" loading="lazy" onerror="this.style.display='none'">
+              <div class="webcam-overlay">
+                <div class="webcam-play">▶</div>
+                <div style="color:#fff;font-size:.75rem;margin-top:.3rem;">Watch on Twitch</div>
+              </div>
+            </a>
+            <div class="webcam-footer">
+              <span class="webcam-label">${esc(cam.label)}</span>
+              <span class="live-badge"><span class="live-dot"></span> LIVE</span>
+            </div>
+          </div>`;
+        } else {
+          // Desktop: full iframe embed
+          const parents = [location.hostname];
+          if (location.hostname !== 'kite-conditions.chip-306.workers.dev')
+            parents.push('kite-conditions.chip-306.workers.dev');
+          const parentParams = parents.map(p => `parent=${p}`).join('&');
+          wcHTML += `<div class="webcam-card">
+            <div class="webcam-iframe-wrap">
+              <iframe
+                src="https://player.twitch.tv/?channel=${encodeURIComponent(cam.twitch)}&${parentParams}&muted=true&autoplay=true"
+                height="300"
+                width="400"
+                allowfullscreen
+                allow="autoplay; encrypted-media; fullscreen"
+                style="border:0;width:100%;height:100%;"
+              ></iframe>
+            </div>
+            <div class="webcam-footer">
+              <span class="webcam-label">${esc(cam.label)}</span>
+              <span class="live-badge"><span class="live-dot"></span> LIVE</span>
+            </div>
+          </div>`;
+        }
       } else if (cam.youtube) {
         // YouTube live stream embed
         wcHTML += `<div class="webcam-card">
