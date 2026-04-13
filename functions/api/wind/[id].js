@@ -34,10 +34,36 @@ export async function onRequestGet(context) {
 
   // Load existing history from KV
   let history = [];
+  let historyNeedsRecompute = false;
   try {
     const raw = await env.CACHE.get(historyKey, { type: 'json' });
-    if (raw && Array.isArray(raw)) history = raw;
+    if (raw && Array.isArray(raw)) {
+      history = raw;
+      // Migration: if all gust values are identical (stale daily-high), mark for recompute
+      if (history.length > 2) {
+        const gusts = history.map(h => h.gust).filter(g => g != null);
+        const allSame = gusts.length > 1 && gusts.every(g => g === gusts[0]);
+        if (allSame) {
+          history = history.map(h => { const e = { ...h }; delete e.gust; return e; });
+          historyNeedsRecompute = true;
+        }
+      }
+    }
   } catch (e) { /* ignore */ }
+
+  // Helper: compute rolling-window gusts for all history entries
+  function computeRollingGusts(entries) {
+    const GUST_WINDOW_MS = 10 * 60 * 1000; // 10-minute rolling window
+    return entries.map(entry => {
+      const windowStart = entry.ts - GUST_WINDOW_MS;
+      const windowEnd = entry.ts + GUST_WINDOW_MS;
+      const windowVals = entries
+        .filter(h => h.ts >= windowStart && h.ts <= windowEnd)
+        .map(h => h.wind);
+      const rollingGust = windowVals.length > 0 ? Math.max(...windowVals) : entry.wind;
+      return { ...entry, gust: rollingGust };
+    });
+  }
 
   // Check if we need to fetch fresh data (throttle to MIN_FETCH_INTERVAL)
   let current = null;
@@ -50,6 +76,11 @@ export async function onRequestGet(context) {
     if (cachedCurrent && (now - cachedCurrent.ts) < MIN_FETCH_INTERVAL) {
       // Use cached current data
       current = cachedCurrent.data;
+      // If history had stale gusts stripped, recompute and save now
+      if (historyNeedsRecompute && history.length > 0) {
+        history = computeRollingGusts(history);
+        await env.CACHE.put(historyKey, JSON.stringify(history), { expirationTtl: 86400 });
+      }
     } else {
       // Fetch from WeatherLink
       const resp = await fetch(`${WEATHERLINK_URL}${token}`, {
@@ -95,10 +126,10 @@ export async function onRequestGet(context) {
 
       // Only add if this is a different timestamp than the last reading
       if (!lastReading || lastReading.ts !== readingTs) {
+        // Store the raw wind speed — we'll compute rolling-window gust below
         history.push({
           ts: readingTs,
           wind: current.wind,
-          gust: current.gust,
           dir: current.wind_dir,
           temp: current.temp,
         });
@@ -106,6 +137,10 @@ export async function onRequestGet(context) {
         // Trim history to HISTORY_HOURS
         const cutoff = Date.now() - (HISTORY_HOURS * 60 * 60 * 1000);
         history = history.filter(h => h.ts > cutoff);
+
+        // Compute per-entry rolling gust: max wind over a ±10-minute window
+        // This replaces the stale daily-high gust from the WeatherLink embed API
+        history = computeRollingGusts(history);
 
         // Save updated history to KV (TTL = 24 hours)
         await env.CACHE.put(historyKey, JSON.stringify(history), {
