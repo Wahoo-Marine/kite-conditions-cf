@@ -29,6 +29,13 @@ export async function onRequestGet(context) {
   }
 
   const token = spot.weather_station;
+
+  // Route to NDBC handler if token starts with 'ndbc:'
+  if (token.startsWith('ndbc:')) {
+    const stid = token.slice(5).toUpperCase();
+    return handleNdbc(stid, spotId, spot.name, env);
+  }
+
   const historyKey = `${HISTORY_KEY_PREFIX}${spotId}`;
   const currentKey = `${CURRENT_KEY_PREFIX}${spotId}`;
 
@@ -173,6 +180,127 @@ export async function onRequestGet(context) {
     },
   });
 }
+
+// ── NDBC handler ─────────────────────────────────────────────────────────────
+const MPS_TO_MPH = 2.23694;
+const NDBC_HISTORY_HOURS = 6;
+
+async function handleNdbc(stid, spotId, spotName, env) {
+  const historyKey = `${HISTORY_KEY_PREFIX}${spotId}`;
+  const currentKey = `${CURRENT_KEY_PREFIX}${spotId}`;
+  const now = Math.floor(Date.now() / 1000);
+
+  // Check throttle
+  let current = null;
+  let fetchedFresh = false;
+
+  try {
+    const cachedCurrent = await env.CACHE.get(currentKey, { type: 'json' });
+    if (cachedCurrent && (now - cachedCurrent.ts) < MIN_FETCH_INTERVAL) {
+      current = cachedCurrent.data;
+    } else {
+      // Fetch NDBC realtime2 txt
+      const resp = await fetch(`https://www.ndbc.noaa.gov/data/realtime2/${stid}.txt`, {
+        signal: AbortSignal.timeout(10000),
+        headers: { 'User-Agent': 'KiteConditions/1.0' },
+      });
+      if (!resp.ok) throw new Error(`NDBC HTTP ${resp.status}`);
+      const text = await resp.text();
+
+      // Parse: skip 2 header lines, take first data line
+      const lines = text.trim().split('\n').filter(l => !l.startsWith('#'));
+      if (!lines.length) throw new Error('No NDBC data');
+      const parts = lines[0].trim().split(/\s+/);
+      // Columns: YY MM DD hh mm WDIR WSPD GST WVHT DPD APD MWD PRES ATMP WTMP DEWP VIS PTDY TIDE
+      const wdir = parseFloat(parts[5]);
+      const wspd = parseFloat(parts[6]); // m/s
+      const gst  = parseFloat(parts[7]); // m/s
+      const pres = parseFloat(parts[12]);
+      const atmp = parseFloat(parts[13]); // °C
+
+      const windMph  = isNaN(wspd) ? 0 : Math.round(wspd * MPS_TO_MPH * 10) / 10;
+      const gustMph  = isNaN(gst)  ? windMph : Math.round(gst  * MPS_TO_MPH * 10) / 10;
+      const windDeg  = isNaN(wdir) ? 0 : wdir;
+      const tempF    = isNaN(atmp) ? null : Math.round(atmp * 9/5 + 32);
+
+      // Build timestamp from data line
+      const [yy, mo, dd, hh, mm] = parts.slice(0, 5).map(Number);
+      const readingTs = Date.UTC(yy, mo - 1, dd, hh, mm);
+
+      current = {
+        wind: windMph,
+        gust: gustMph,
+        wind_dir: windDeg,
+        wind_dir_cardinal: degreesToCardinal(windDeg),
+        dir: degreesToCardinal(windDeg),
+        temp: tempF,
+        feels_like: null,
+        humidity: null,
+        barometer: isNaN(pres) ? null : pres,
+        barometer_trend: null,
+        rain: null,
+        wind_units: 'mph',
+        temp_units: '°F',
+        last_received: new Date(readingTs).toISOString(),
+        station_location: `Sand Key (SANF1)`,
+      };
+
+      fetchedFresh = true;
+      await env.CACHE.put(currentKey, JSON.stringify({ ts: now, data: current }), { expirationTtl: 120 });
+
+      // Append to history
+      let history = [];
+      try {
+        const raw = await env.CACHE.get(historyKey, { type: 'json' });
+        if (raw && Array.isArray(raw)) history = raw;
+      } catch (e) { /* ignore */ }
+
+      const lastReading = history.length > 0 ? history[history.length - 1] : null;
+      if (!lastReading || lastReading.ts !== readingTs) {
+        history.push({ ts: readingTs, wind: windMph, gust: gustMph, dir: windDeg, temp: tempF });
+        const cutoff = Date.now() - (NDBC_HISTORY_HOURS * 60 * 60 * 1000);
+        history = history.filter(h => h.ts > cutoff);
+        await env.CACHE.put(historyKey, JSON.stringify(history), { expirationTtl: 86400 });
+      }
+
+      let history2 = [];
+      try {
+        const raw = await env.CACHE.get(historyKey, { type: 'json' });
+        if (raw && Array.isArray(raw)) history2 = raw;
+      } catch (e) { /* ignore */ }
+
+      return Response.json({
+        spot_id: spotId,
+        spot_name: spotName,
+        current,
+        history: history2,
+        history_hours: NDBC_HISTORY_HOURS,
+        fetched_fresh: fetchedFresh,
+      }, { headers: { 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' } });
+    }
+  } catch (e) {
+    if (!current) {
+      return Response.json({ error: `NDBC fetch failed: ${e.message}` }, { status: 502 });
+    }
+  }
+
+  // Served from cache — load history too
+  let history = [];
+  try {
+    const raw = await env.CACHE.get(historyKey, { type: 'json' });
+    if (raw && Array.isArray(raw)) history = raw;
+  } catch (e) { /* ignore */ }
+
+  return Response.json({
+    spot_id: spotId,
+    spot_name: spotName,
+    current,
+    history,
+    history_hours: NDBC_HISTORY_HOURS,
+    fetched_fresh: false,
+  }, { headers: { 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' } });
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function degreesToCardinal(deg) {
   if (deg == null || isNaN(deg)) return '?';
