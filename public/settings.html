@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🪁 Settings — Kite Conditions</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 </head>
 <body>
 
@@ -31,11 +32,10 @@
     <div class="lookup-row">
       <div class="form-group">
         <label for="geo-input">Search location</label>
-        <input type="text" id="geo-input" placeholder="e.g. Key West, FL">
+        <input type="text" id="geo-input" placeholder="e.g. Lake Allatoona, GA or Dauphin Island, AL">
       </div>
-      <button class="btn-lookup" id="btn-geo" type="button">🔍 Lookup</button>
+      <button class="btn-lookup" id="btn-geo" type="button">🗺 Pick on Map</button>
     </div>
-    <div class="geo-results" id="geo-results" style="display:none;"></div>
 
     <div class="form-row" style="margin-top:0.8rem;">
       <div class="form-group">
@@ -66,12 +66,122 @@
   <div class="spot-list" id="spot-list"></div>
 </div>
 
+<!-- Map Picker Modal -->
+<div id="map-modal" class="map-modal" style="display:none;" role="dialog" aria-modal="true" aria-label="Pick location on map">
+  <div class="map-modal-inner">
+    <div class="map-modal-header">
+      <div>
+        <h3 style="margin:0;font-size:1rem;">📍 Pick Location</h3>
+        <p style="margin:0.2rem 0 0;font-size:.78rem;color:var(--text-muted);">Click the map or drag the pin to set the exact spot. Use the search box to jump to a location.</p>
+      </div>
+      <button class="btn btn-cancel" id="map-close" type="button">✕ Close</button>
+    </div>
+
+    <div class="map-search-row">
+      <input type="text" id="map-search-input" placeholder="Search again…" autocomplete="off">
+      <button class="btn-lookup" id="map-search-btn" type="button">🔍</button>
+    </div>
+    <div id="map-search-results" class="map-search-results"></div>
+
+    <div id="map-container"></div>
+
+    <div class="map-coords-bar">
+      <span>📌 <strong id="map-lat-display">—</strong>, <strong id="map-lon-display">—</strong></span>
+      <button class="btn btn-save" id="map-use-btn" type="button" disabled>✓ Use this location</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
 <footer>
   Powered by <a href="https://open-meteo.com/" target="_blank">Open-Meteo</a>
 </footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+<style>
+/* ── Map Modal ──────────────────────── */
+.map-modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.map-modal-inner {
+  background: var(--card);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 680px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+}
+.map-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1rem 1rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+}
+.map-search-row {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem 0;
+}
+.map-search-row input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.map-search-results {
+  max-height: 140px;
+  overflow-y: auto;
+  margin: 0 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  display: none;
+}
+.map-search-results .geo-item {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+  transition: background .15s;
+}
+.map-search-results .geo-item:last-child { border-bottom: none; }
+.map-search-results .geo-item:hover { background: var(--card); }
+.map-search-results .geo-coords { font-size:.72rem; color:var(--text-muted); margin-top:.15rem; }
+#map-container {
+  flex: 1;
+  min-height: 300px;
+  margin: 0.6rem 1rem 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.map-coords-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 1rem 0.75rem;
+  font-size: 0.85rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+</style>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -146,7 +256,6 @@ function showForm(spot = null) {
   $('#spot-lat').value = spot ? spot.lat : '';
   $('#spot-lon').value = spot ? spot.lon : '';
   $('#edit-id').value = spot ? spot.id : '';
-  $('#geo-results').style.display = 'none';
   $('#geo-input').value = '';
 
   // Webcam fields
@@ -207,48 +316,169 @@ function addWebcamField(type = 'ozolio', value = '', label = '') {
   container.appendChild(row);
 }
 
-// ── Geocode Lookup ────────────────────
+// ── Map Picker ────────────────────────
+let mapInstance = null;
+let mapMarker = null;
+let pendingMapName = '';
+
 async function geoLookup() {
   const q = $('#geo-input').value.trim();
-  if (!q) return;
+  if (!q) { toast('Enter a location to search', true); return; }
   const btn = $('#btn-geo');
   btn.disabled = true;
   btn.textContent = '⏳';
 
   try {
-    const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-
-    if (!data.results || data.results.length === 0) {
-      toast('No results found', true);
+    const results = await geocodeQuery(q);
+    if (!results || results.length === 0) {
+      toast('No results found — try a different name or open the map to click manually', true);
+      openMapModal(null, q);
       return;
     }
-
-    const container = $('#geo-results');
-    container.style.display = 'block';
-    let html = '';
-    data.results.forEach(r => {
-      const label = [r.name, r.admin1, r.country].filter(Boolean).join(', ');
-      html += `<div class="geo-item" onclick="selectGeo('${esc(r.name)}', ${r.latitude}, ${r.longitude})">
-        <div>${label}</div>
-        <div class="geo-coords">${r.latitude.toFixed(4)}°, ${r.longitude.toFixed(4)}°</div>
-      </div>`;
-    });
-    container.innerHTML = html;
+    const first = results[0];
+    openMapModal({ lat: first.lat, lon: first.lon, name: first.name }, q, results);
   } catch (err) {
     toast('Geocode lookup failed', true);
+    openMapModal(null, q);
   } finally {
     btn.disabled = false;
-    btn.textContent = '🔍 Lookup';
+    btn.textContent = '🗺 Pick on Map';
   }
 }
 
-function selectGeo(name, lat, lon) {
-  $('#spot-name').value = name;
-  $('#spot-lat').value = lat;
-  $('#spot-lon').value = lon;
-  $('#geo-results').style.display = 'none';
+async function geocodeQuery(q) {
+  const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+  if (!res.ok) throw new Error('Geocode request failed');
+  return await res.json(); // array of { name, lat, lon }
 }
+
+function openMapModal(center, searchQuery = '', results = []) {
+  const modal = $('#map-modal');
+  modal.style.display = 'flex';
+  $('#map-search-input').value = searchQuery;
+  $('#map-search-results').style.display = 'none';
+  $('#map-search-results').innerHTML = '';
+
+  // Default center: Gulf Coast / SE US if nothing found
+  const lat = center ? center.lat : 30.5;
+  const lon = center ? center.lon : -87.5;
+  const zoom = center ? 12 : 5;
+  pendingMapName = center ? center.name : '';
+
+  if (!mapInstance) {
+    mapInstance = L.map('map-container').setView([lat, lon], zoom);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(mapInstance);
+
+    mapMarker = L.marker([lat, lon], { draggable: true }).addTo(mapInstance);
+    mapMarker.on('dragend', () => updateMapCoords(mapMarker.getLatLng()));
+    mapInstance.on('click', e => {
+      mapMarker.setLatLng(e.latlng);
+      updateMapCoords(e.latlng);
+    });
+  } else {
+    mapInstance.setView([lat, lon], zoom);
+    mapMarker.setLatLng([lat, lon]);
+  }
+
+  updateMapCoords({ lat, lng: lon });
+  if (center) { pendingMapName = center.name; }
+
+  // Show dropdown of alternate results if multiple
+  if (results.length > 1) renderMapSearchResults(results);
+
+  // Force Leaflet to recalculate size after modal is visible
+  setTimeout(() => mapInstance.invalidateSize(), 50);
+}
+
+function updateMapCoords({ lat, lng }) {
+  const latR = Math.round(lat * 1000000) / 1000000;
+  const lonR = Math.round(lng * 1000000) / 1000000;
+  $('#map-lat-display').textContent = latR.toFixed(6) + '°';
+  $('#map-lon-display').textContent = lonR.toFixed(6) + '°';
+  $('#map-use-btn').disabled = false;
+  $('#map-use-btn').dataset.lat = latR;
+  $('#map-use-btn').dataset.lon = lonR;
+}
+
+function closeMapModal() {
+  $('#map-modal').style.display = 'none';
+  $('#map-search-results').style.display = 'none';
+}
+
+function renderMapSearchResults(results) {
+  const container = $('#map-search-results');
+  container.style.display = 'block';
+  container.innerHTML = results.map((r, i) =>
+    `<div class="geo-item" onclick="jumpMapTo(${r.lat},${r.lon},'${esc(r.name)}',${ i===0 ? 'true' : 'false'})">` +
+      `<div>${esc(r.name)}</div>` +
+      `<div class="geo-coords">${r.lat.toFixed(4)}°, ${r.lon.toFixed(4)}°</div>` +
+    `</div>`
+  ).join('');
+}
+
+function jumpMapTo(lat, lon, name, hideResults = false) {
+  mapInstance.setView([lat, lon], 13);
+  mapMarker.setLatLng([lat, lon]);
+  updateMapCoords({ lat, lng: lon });
+  pendingMapName = name;
+  if (hideResults) {
+    $('#map-search-results').style.display = 'none';
+  }
+}
+
+// In-modal search
+async function mapSearch() {
+  const q = $('#map-search-input').value.trim();
+  if (!q) return;
+  const btn = $('#map-search-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  try {
+    const results = await geocodeQuery(q);
+    if (!results || results.length === 0) {
+      toast('No results found', true);
+      return;
+    }
+    renderMapSearchResults(results);
+    // Jump to first result
+    jumpMapTo(results[0].lat, results[0].lon, results[0].name);
+  } catch (e) {
+    toast('Search failed', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍';
+  }
+}
+
+// Bind map modal events
+document.addEventListener('DOMContentLoaded', () => {
+  $('#map-close').addEventListener('click', closeMapModal);
+  $('#map-use-btn').addEventListener('click', () => {
+    const lat = parseFloat($('#map-use-btn').dataset.lat);
+    const lon = parseFloat($('#map-use-btn').dataset.lon);
+    if (!isNaN(lat) && !isNaN(lon)) {
+      $('#spot-lat').value = lat;
+      $('#spot-lon').value = lon;
+      // Pre-fill name only if blank
+      if (!$('#spot-name').value.trim() && pendingMapName) {
+        $('#spot-name').value = pendingMapName;
+      }
+      closeMapModal();
+      $('#spot-name').focus();
+    }
+  });
+  $('#map-search-btn').addEventListener('click', mapSearch);
+  $('#map-search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); mapSearch(); }
+  });
+  // Close modal on backdrop click
+  $('#map-modal').addEventListener('click', e => {
+    if (e.target === $('#map-modal')) closeMapModal();
+  });
+});
 
 // ── Save Spot ─────────────────────────
 async function saveSpot() {
