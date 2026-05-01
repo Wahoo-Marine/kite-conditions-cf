@@ -6,6 +6,7 @@ import {
   fetchForecast, processForecast, ratingLabel, ratingEmoji,
   degreesToCompass, fetchTides, processTides,
 } from '../lib/kite-logic.js';
+import { getUserEmail } from '../lib/auth.js';
 
 export async function onRequestGet(context) {
   const { env, request } = context;
@@ -41,10 +42,25 @@ export async function onRequestGet(context) {
   const endStr = endDate.toISOString().slice(0, 10);
   const numDays = Math.round((endDate - startDate) / 86400000) + 1;
 
-  // Load spots from D1
-  const { results: spots } = await env.DB.prepare(
-    'SELECT id, name, lat, lon, webcams, sort_order FROM spots ORDER BY sort_order, rowid'
-  ).all();
+  // Load spots from D1 — user's personal spots, or defaults if they have none
+  const email = getUserEmail(request);
+  let spots;
+  if (email) {
+    const personal = await env.DB.prepare(
+      'SELECT id, name, lat, lon, webcams, sort_order FROM spots WHERE user_id = ? ORDER BY sort_order, rowid'
+    ).bind(email).all();
+    if (personal.results.length > 0) {
+      spots = personal.results;
+    } else {
+      ({ results: spots } = await env.DB.prepare(
+        'SELECT id, name, lat, lon, webcams, sort_order FROM spots WHERE user_id IS NULL ORDER BY sort_order, rowid'
+      ).all());
+    }
+  } else {
+    ({ results: spots } = await env.DB.prepare(
+      'SELECT id, name, lat, lon, webcams, sort_order FROM spots WHERE user_id IS NULL ORDER BY sort_order, rowid'
+    ).all());
+  }
 
   const allSpots = [];
   const bestDays = [];
