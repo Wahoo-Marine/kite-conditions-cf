@@ -7,8 +7,11 @@ CREATE TABLE IF NOT EXISTS spots (
   webcams TEXT DEFAULT '[]',  -- JSON array
   weather_station TEXT DEFAULT NULL,  -- WeatherLink URL token
   sort_order INTEGER DEFAULT 0,
+  user_id TEXT DEFAULT NULL,  -- NULL = default spot (visible to all); email = personal spot
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_spots_user_id ON spots(user_id);
 
 -- User preferences table  
 CREATE TABLE IF NOT EXISTS preferences (

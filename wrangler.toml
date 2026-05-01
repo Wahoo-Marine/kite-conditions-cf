@@ -22,3 +22,7 @@ id = "bbe782b255734d20b8e672581f0dfbcf"
 [[routes]]
 pattern = "kite.wahoomarine.com"
 custom_domain = true
+
+[vars]
+# Set this to your Cloudflare Access login email to enable admin controls
+ADMIN_EMAIL = ""

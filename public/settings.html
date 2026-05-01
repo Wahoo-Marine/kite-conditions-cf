@@ -19,6 +19,8 @@
   <a href="/settings" class="active">Settings</a>
 </nav>
 
+<div id="user-bar" class="user-bar"></div>
+
 <div class="container settings-width" id="app">
 
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
@@ -102,6 +104,42 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
 <style>
+/* ── User Bar ──────────────────────── */
+.user-bar {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 0.4rem 1.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  min-height: 2rem;
+}
+.user-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: 780px;
+  margin: 0 auto;
+}
+.view-toggle {
+  display: flex;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+.view-toggle button {
+  padding: 0.2rem 0.75rem;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all .15s;
+}
+.view-toggle button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
 /* ── Map Modal ──────────────────────── */
 .map-modal {
   position: fixed; inset: 0;
@@ -188,9 +226,11 @@ const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
 let spots = [];
-let geoTimeout = null;
+let currentUser = null;
+let viewMode = 'mine'; // 'mine' | 'defaults' (admin only)
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadUser();
   loadSpots();
   bindEvents();
 });
@@ -209,10 +249,42 @@ function bindEvents() {
   });
 }
 
-// ── Load Spots ────────────────────────
+// ── Load User ──────────────────────
+async function loadUser() {
+  try {
+    const res = await fetch('/api/me');
+    currentUser = await res.json();
+  } catch (e) {
+    currentUser = { email: null, isAdmin: false };
+  }
+  renderUserBar();
+}
+
+function renderUserBar() {
+  const bar = $('#user-bar');
+  if (!currentUser?.email) { bar.innerHTML = ''; return; }
+  bar.innerHTML = `
+    <div class="user-bar-inner">
+      <span>👤 ${esc(currentUser.email)}</span>
+      ${currentUser.isAdmin ? `
+        <div class="view-toggle">
+          <button onclick="setViewMode('mine')" class="${viewMode === 'mine' ? 'active' : ''}">My Spots</button>
+          <button onclick="setViewMode('defaults')" class="${viewMode === 'defaults' ? 'active' : ''}">Default Spots</button>
+        </div>` : ''}
+    </div>`;
+}
+
+async function setViewMode(mode) {
+  viewMode = mode;
+  renderUserBar();
+  await loadSpots();
+}
+
+// ── Load Spots ────────────────────
 async function loadSpots() {
   try {
-    const res = await fetch('/api/spots');
+    const source = viewMode === 'defaults' ? 'defaults' : 'mine';
+    const res = await fetch(`/api/spots?source=${source}`);
     spots = await res.json();
     renderSpots();
   } catch (err) {
@@ -221,11 +293,20 @@ async function loadSpots() {
   }
 }
 
-// ── Render Spots ──────────────────────
+// ── Render Spots ──────────────────
 function renderSpots() {
   const list = $('#spot-list');
   if (spots.length === 0) {
-    list.innerHTML = '<div class="empty-state"><div class="emoji">🪁</div><p>No spots yet. Add your first kite spot!</p></div>';
+    if (viewMode === 'mine') {
+      list.innerHTML = `<div class="empty-state">
+        <div class="emoji">🪁</div>
+        <p>You don’t have any personal spots yet.</p>
+        <button class="btn btn-save" style="margin:.75rem auto;display:block;" onclick="copyDefaults(this)">📋 Copy default spots to get started</button>
+        <p style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem;">Or add a spot manually with the button above.</p>
+      </div>`;
+    } else {
+      list.innerHTML = '<div class="empty-state"><div class="emoji">🪁</div><p>No default spots yet.</p></div>';
+    }
     return;
   }
 
@@ -314,6 +395,20 @@ function addWebcamField(type = 'ozolio', value = '', label = '') {
     }
   });
   container.appendChild(row);
+}
+
+// ── Copy Defaults ───────────────────
+async function copyDefaults(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Copying…'; }
+  try {
+    const res = await fetch('/api/spots/copy-defaults', { method: 'POST' });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed'); }
+    toast('Default spots copied to your account!');
+    loadSpots();
+  } catch (e) {
+    toast(e.message || 'Copy failed', true);
+    if (btn) { btn.disabled = false; btn.textContent = '📋 Copy default spots to get started'; }
+  }
 }
 
 // ── Map Picker ────────────────────────
@@ -503,7 +598,7 @@ async function saveSpot() {
     else webcams.push({ oid: value, label: label || 'Camera' });
   });
 
-  const body = { name, lat, lon, webcams };
+  const body = { name, lat, lon, webcams, is_default: viewMode === 'defaults' };
 
   try {
     let res;
