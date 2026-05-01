@@ -25,4 +25,4 @@ custom_domain = true
 
 [vars]
 # Set this to your Cloudflare Access login email to enable admin controls
-ADMIN_EMAIL = ""
+ADMIN_EMAIL = "chip@wahoomarine.com"
