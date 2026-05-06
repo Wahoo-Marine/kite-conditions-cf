@@ -160,6 +160,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (lastWindHistory) renderWindChart(lastWindHistory, lastWindHours);
     }));
     window.addEventListener('resize', () => { if (lastWindHistory) renderWindChart(lastWindHistory, lastWindHours); });
+    // Refresh wind data immediately (baked-in data may be stale)
+    loadWindData();
   }
 });
 
