@@ -66,17 +66,33 @@ export async function onRequestGet(context) {
 
       const rewritten = text.split('\n').map(line => {
         const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) return line;
+        if (!trimmed) return line;
 
-        // Resolve relative URLs against the playlist base
-        let absUrl;
-        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-          absUrl = trimmed;
-        } else {
-          absUrl = baseUrl + trimmed;
+        // Regular segment/playlist lines (not tags)
+        if (!trimmed.startsWith('#')) {
+          let absUrl = (trimmed.startsWith('http://') || trimmed.startsWith('https://'))
+            ? trimmed
+            : baseUrl + trimmed;
+          return `${origin}/api/twitch-proxy?u=${encodeU(absUrl)}`;
         }
 
-        return `${origin}/api/twitch-proxy?u=${encodeU(absUrl)}`;
+        // Rewrite URLs embedded in Twitch-specific tags:
+        //   #EXT-X-TWITCH-PREFETCH:https://...
+        //   #EXT-X-TWITCH-PREFETCH-SEQUENCE:...
+        //   #EXT-X-MAP:URI="https://..."
+        const prefetchMatch = trimmed.match(/^(#EXT-X-TWITCH-PREFETCH(?:-SEQUENCE)?:)(https?:\/\/.+)$/i);
+        if (prefetchMatch) {
+          const proxied = `${origin}/api/twitch-proxy?u=${encodeU(prefetchMatch[2])}`;
+          return `${prefetchMatch[1]}${proxied}`;
+        }
+
+        const mapMatch = trimmed.match(/^(#EXT-X-MAP:URI=")(https?:\/\/[^"]+)(".*)$/i);
+        if (mapMatch) {
+          const proxied = `${origin}/api/twitch-proxy?u=${encodeU(mapMatch[2])}`;
+          return `${mapMatch[1]}${proxied}${mapMatch[3]}`;
+        }
+
+        return line; // all other tags pass through unchanged
       }).join('\n');
 
       return new Response(rewritten, {

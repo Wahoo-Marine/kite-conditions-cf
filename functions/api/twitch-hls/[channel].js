@@ -63,13 +63,9 @@ export async function onRequestGet(context) {
     const masterText = await masterResp.text();
 
     // ── Step 3: rewrite quality-level playlist URLs to go through our proxy ──
-    // Each non-comment, non-empty line in the master playlist is a URL like:
-    //   https://video-weaver.xxx.hls.twitchsvc.net/v1/playlist/xxx.m3u8
-    // We base64-encode it and route through /api/twitch-proxy?u=<encoded>
     const rewritten = masterText.split('\n').map(line => {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) return line; // keep tags as-is
-      // Rewrite absolute URLs only
+      if (!trimmed || trimmed.startsWith('#')) return line; // tags pass through
       if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
         const encoded = btoa(trimmed).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
         return `${origin}/api/twitch-proxy?u=${encoded}`;
