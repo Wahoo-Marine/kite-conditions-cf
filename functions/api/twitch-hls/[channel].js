@@ -25,7 +25,13 @@ export async function onRequestGet(context) {
     // ── Step 1: get playback access token ────────────────────────────────────
     const gqlResp = await fetch(GQL_URL, {
       method: 'POST',
-      headers: { 'Client-ID': TWITCH_CLIENT_ID, 'Content-Type': 'application/json' },
+      headers: {
+        'Client-ID': TWITCH_CLIENT_ID,
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': 'https://www.twitch.tv/',
+        'Origin': 'https://www.twitch.tv',
+      },
       body: JSON.stringify({
         query: `{ streamPlaybackAccessToken(channelName: "${channel}", params: { platform: "web", playerBackend: "mediaplayer", playerType: "site" }) { value signature } }`,
       }),
@@ -55,9 +61,18 @@ export async function onRequestGet(context) {
     });
     const masterUrl = `${USHER_URL}/${channel}.m3u8?${usherParams.toString()}`;
 
-    const masterResp = await fetch(masterUrl, { signal: AbortSignal.timeout(8000) });
+    const masterResp = await fetch(masterUrl, {
+      headers: {
+        'Client-ID': TWITCH_CLIENT_ID,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': 'https://www.twitch.tv/',
+        'Origin': 'https://www.twitch.tv',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
     if (!masterResp.ok) {
-      return Response.json({ error: `Stream offline (usher ${masterResp.status})` }, { status: 404 });
+      const body = await masterResp.text().catch(() => '');
+      return Response.json({ error: `Stream offline (usher ${masterResp.status})`, detail: body.slice(0, 200) }, { status: 404 });
     }
 
     const masterText = await masterResp.text();
