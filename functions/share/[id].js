@@ -41,6 +41,14 @@ export async function onRequestGet(context) {
 
   let days = [], current = null, tz = '';
 
+  // Fetch wind server-side if station configured (avoids Access auth from browser)
+  const windPromise = spot.weather_station
+    ? fetch(new URL(`/api/wind/${spotId}`, context.request.url).toString(), {
+        headers: { 'Cookie': context.request.headers.get('Cookie') || '' },
+        signal: AbortSignal.timeout(8000),
+      }).then(r => r.ok ? r.json() : null).catch(() => null)
+    : Promise.resolve(null);
+
   const [forecastResult, tidesResult] = await Promise.allSettled([
     fetchForecast(spot.lat, spot.lon, env.CACHE),
     fetchTides(spot.lat, spot.lon, env.CACHE),
@@ -61,10 +69,12 @@ export async function onRequestGet(context) {
     });
   }
 
+  const windData = await windPromise;
   const data = JSON.stringify({ spot: { ...spot, webcams, days, timezone: tz }, current });
+  const windJson = JSON.stringify(windData);
 
   // ── Render HTML ──────────────────────────────────────────────────────────
-  const html = buildHtml(spot.name, webcams, data);
+  const html = buildHtml(spot.name, spot.id, !!spot.weather_station, webcams, data, windJson);
   return new Response(html, {
     headers: {
       'Content-Type': 'text/html; charset=UTF-8',
@@ -73,7 +83,7 @@ export async function onRequestGet(context) {
   });
 }
 
-function buildHtml(spotName, webcams, dataJson) {
+function buildHtml(spotName, spotId, hasWeatherStation, webcams, dataJson, windJson) {
   const hasHls = webcams.some(c => c.oid);
   return `<!DOCTYPE html>
 <html lang="en">
@@ -107,6 +117,18 @@ function buildHtml(spotName, webcams, dataJson) {
   <!-- Webcams -->
   <div class="webcams-section" id="webcams-section" style="display:none;"></div>
 
+  <!-- Live Wind Station -->
+  ${hasWeatherStation ? `<div class="wind-station-section" id="wind-station-section">
+    <div class="wind-station-header">🌬️ Live Wind — Weather Station</div>
+    <div class="wind-station-content">
+      <div class="wind-live-panel" id="wind-live-panel"><div class="wind-live-loading">Loading live wind data…</div></div>
+      <div class="wind-chart-wrap">
+        <canvas id="wind-chart" width="800" height="220"></canvas>
+        <div class="wind-chart-label" id="wind-chart-label">Wind history loading…</div>
+      </div>
+    </div>
+  </div>` : ''}
+
   <!-- Day Tabs + Panels -->
   <div class="day-tabs" id="day-tabs"></div>
   <div id="day-panels"></div>
@@ -119,11 +141,23 @@ function buildHtml(spotName, webcams, dataJson) {
 
 <script>
 const __DATA__ = ${dataJson};
+const __WIND__ = ${windJson};
+const __SPOT_ID__ = '${spotId}';
+const __HAS_WIND__ = ${hasWeatherStation};
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 let webcamTimers = [];
+let lastWindHistory = null, lastWindHours = 6;
 
-document.addEventListener('DOMContentLoaded', () => renderSpot(__DATA__));
+document.addEventListener('DOMContentLoaded', () => {
+  renderSpot(__DATA__);
+  if (__HAS_WIND__) {
+    if (__WIND__) renderWindData(__WIND__);
+    else loadWindData();
+    setInterval(loadWindData, 60000);
+    window.addEventListener('resize', () => { if (lastWindHistory) renderWindChart(lastWindHistory, lastWindHours); });
+  }
+});
 
 function renderSpot(data) {
   const { spot, current } = data;
@@ -463,6 +497,91 @@ function renderTideChart(dayIdx, tide) {
     ctx.beginPath(); ctx.moveTo(x, PAD_TOP + chartH); ctx.lineTo(x, PAD_TOP + chartH + 3);
     ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1; ctx.stroke();
   });
+}
+
+// ── Live Wind ─────────────────────────────────────────────────────────────────
+async function loadWindData() {
+  try {
+    const res = await fetch('/share/wind/' + __SPOT_ID__);
+    if (!res.ok) throw new Error('no data');
+    renderWindData(await res.json());
+  } catch (e) {
+    const p = $('#wind-live-panel');
+    if (p) p.innerHTML = '<div class="wind-live-loading" style="color:var(--text-muted);">Wind data temporarily unavailable</div>';
+  }
+}
+function renderWindData(data) {
+  if (data.current && data.current.station_location) {
+    const hdr = document.querySelector('.wind-station-header');
+    if (hdr) hdr.textContent = '\u{1F32C}\uFE0F Live Wind \u2014 ' + data.current.station_location;
+  }
+  renderWindLive(data.current);
+  if (data.history) { renderWindChart(data.history, data.history_hours); lastWindHistory = data.history; lastWindHours = data.history_hours; }
+}
+function renderWindLive(c) {
+  if (!c) return;
+  const panel = $('#wind-live-panel');
+  if (!panel) return;
+  const windCol = c.wind >= 15 ? 'var(--send-it)' : (c.wind >= 12 ? 'var(--maybe)' : 'var(--text-muted)');
+  const gustCls = c.gust < 25 ? 'gust-low' : (c.gust < 35 ? 'gust-med' : 'gust-high');
+  const arrowDeg = (c.wind_dir + 180) % 360;
+  const lastUpdated = c.last_received ? new Date(c.last_received).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '';
+  panel.innerHTML = '<div class="wl-grid"><div class="wl-wind-main"><div class="wl-compass"><svg viewBox="0 0 80 80" class="compass-svg">'+
+    '<circle cx="40" cy="40" r="36" fill="none" stroke="var(--border)" stroke-width="2"/>'+
+    '<text x="40" y="12" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-weight="600">N</text>'+
+    '<text x="72" y="43" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-weight="600">E</text>'+
+    '<text x="40" y="76" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-weight="600">S</text>'+
+    '<text x="8" y="43" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-weight="600">W</text>'+
+    '<g transform="rotate('+arrowDeg+', 40, 40)">'+
+    '<line x1="40" y1="58" x2="40" y2="18" stroke="'+windCol+'" stroke-width="2.5" stroke-linecap="round"/>'+
+    '<polygon points="40,16 35,26 45,26" fill="'+windCol+'"/></g></svg></div>'+
+    '<div class="wl-wind-numbers">'+
+    '<div class="wl-wind-speed" style="color:'+windCol+'">'+Math.round(c.wind)+'</div>'+
+    '<div class="wl-wind-unit">'+(c.wind_units||'mph')+'</div>'+
+    '<div class="wl-wind-dir">'+(c.wind_dir_cardinal||'?')+' ('+Math.round(c.wind_dir)+'\u00B0)</div>'+
+    '</div></div><div class="wl-details">'+
+    '<div class="wl-detail"><span class="wl-detail-label">Gusts</span><span class="wl-detail-value '+gustCls+'">'+Math.round(c.gust)+' '+(c.wind_units||'mph')+'</span></div>'+
+    '<div class="wl-detail"><span class="wl-detail-label">Temp</span><span class="wl-detail-value">'+(c.temp!=null?Math.round(c.temp)+'\u00B0F':'\u2014')+'</span></div>'+
+    '<div class="wl-detail"><span class="wl-detail-label">Feels Like</span><span class="wl-detail-value">'+(c.feels_like!=null?Math.round(c.feels_like)+'\u00B0F':'\u2014')+'</span></div>'+
+    '<div class="wl-detail"><span class="wl-detail-label">Humidity</span><span class="wl-detail-value">'+(c.humidity!=null?Math.round(c.humidity)+'%':'\u2014')+'</span></div>'+
+    '<div class="wl-detail"><span class="wl-detail-label">Hi / Lo</span><span class="wl-detail-value">'+(c.hi_temp!=null?Math.round(c.hi_temp):'?')+'\u00B0 / '+(c.lo_temp!=null?Math.round(c.lo_temp):'?')+'\u00B0</span></div>'+
+    '<div class="wl-detail"><span class="wl-detail-label">Barometer</span><span class="wl-detail-value">'+(c.barometer||'\u2014')+' '+(c.barometer_trend?'('+c.barometer_trend+')':'')+'</span></div>'+
+    '</div></div>'+(lastUpdated?'<div class="wl-updated">Updated '+lastUpdated+'</div>':'');
+}
+function renderWindChart(history, hours) {
+  const canvas = $('#wind-chart'), label = $('#wind-chart-label');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d'), dpr = window.devicePixelRatio || 1;
+  const W = canvas.parentElement.getBoundingClientRect().width || 800, H = 220;
+  canvas.width = W*dpr; canvas.height = H*dpr; canvas.style.width=W+'px'; canvas.style.height=H+'px'; ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,W,H);
+  if (!history||history.length<2) { if(label) label.textContent='Wind history building up\u2026'; ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,0,W,H); return; }
+  if(label) label.textContent='Last '+hours+' hours \u2014 Wind Speed (solid) & Gusts (dashed)';
+  const PL=42,PR=15,PT=20,PB=35,cW=W-PL-PR,cH=H-PT-PB;
+  const allV=history.flatMap(h=>[h.wind,h.gust]).filter(v=>v!=null);
+  const maxV=Math.max(Math.ceil(Math.max(...allV)/5)*5,20);
+  const tMin=history[0].ts,tMax=history[history.length-1].ts,tR=tMax-tMin||1;
+  const xP=ts=>PL+((ts-tMin)/tR)*cW, yP=v=>PT+cH-(v/maxV)*cH;
+  ctx.fillStyle='rgba(26,39,51,0.8)'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1; ctx.font='10px -apple-system,sans-serif'; ctx.fillStyle='#8899a6';
+  const gs=maxV<=30?5:10;
+  for(let v=0;v<=maxV;v+=gs){const y=yP(v);ctx.beginPath();ctx.moveTo(PL,y);ctx.lineTo(W-PR,y);ctx.stroke();ctx.textAlign='right';ctx.fillText(v+'',PL-6,y+3);}
+  ctx.fillStyle='rgba(34,197,94,0.06)'; ctx.fillRect(PL,yP(25),cW,yP(12)-yP(25));
+  const wp=new Path2D(); wp.moveTo(xP(history[0].ts),yP(history[0].wind));
+  for(let i=1;i<history.length;i++) wp.lineTo(xP(history[i].ts),yP(history[i].wind));
+  wp.lineTo(xP(history[history.length-1].ts),yP(0)); wp.lineTo(xP(history[0].ts),yP(0)); wp.closePath();
+  const g=ctx.createLinearGradient(0,PT,0,PT+cH); g.addColorStop(0,'rgba(56,189,248,0.25)'); g.addColorStop(1,'rgba(56,189,248,0.02)');
+  ctx.fillStyle=g; ctx.fill(wp);
+  ctx.beginPath(); ctx.moveTo(xP(history[0].ts),yP(history[0].wind));
+  for(let i=1;i<history.length;i++) ctx.lineTo(xP(history[i].ts),yP(history[i].wind));
+  ctx.strokeStyle='#38bdf8'; ctx.lineWidth=2; ctx.setLineDash([]); ctx.stroke();
+  ctx.beginPath(); ctx.setLineDash([4,4]); ctx.moveTo(xP(history[0].ts),yP(history[0].gust));
+  for(let i=1;i<history.length;i++) ctx.lineTo(xP(history[i].ts),yP(history[i].gust));
+  ctx.strokeStyle='rgba(234,179,8,0.6)'; ctx.lineWidth=1.5; ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='#8899a6'; ctx.font='10px -apple-system,sans-serif'; ctx.textAlign='center';
+  const st=Math.max(1,Math.floor(history.length/6));
+  for(let i=0;i<history.length;i+=st){const x=xP(history[i].ts);ctx.fillText(new Date(history[i].ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),x,H-8);ctx.beginPath();ctx.moveTo(x,PT+cH);ctx.lineTo(x,PT+cH+4);ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;ctx.stroke();}
+  const last=history[history.length-1]; ctx.beginPath(); ctx.arc(xP(last.ts),yP(last.wind),4,0,Math.PI*2); ctx.fillStyle='#38bdf8'; ctx.fill();
 }
 <\/script>
 </body>
