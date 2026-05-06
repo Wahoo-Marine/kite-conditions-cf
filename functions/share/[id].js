@@ -610,7 +610,7 @@ function renderWindChart(history, hours) {
   // Update label with actual span
   if (label) {
     const spanMin = Math.round(spanMs / 60000);
-    const spanLabel = spanMin >= 90 ? `Last ${Math.round(spanMin/60)} hrs` : `Last ${spanMin} min`;
+    const spanLabel = spanMin >= 90 ? 'Last ' + Math.round(spanMin/60) + ' hrs' : 'Last ' + spanMin + ' min';
     label.textContent = spanLabel;
   }
 }
