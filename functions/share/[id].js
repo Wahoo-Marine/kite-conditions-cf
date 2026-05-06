@@ -607,6 +607,12 @@ function renderWindChart(history, hours) {
   for(let i=0;i<history.length;i+=st){const x=xP(history[i].ts);const ms=toMs(history[i].ts);ctx.fillText(new Date(ms).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),x,H-8);ctx.beginPath();ctx.moveTo(x,PT+cH);ctx.lineTo(x,PT+cH+4);ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;ctx.stroke();}
   const last=history[history.length-1]; ctx.beginPath(); ctx.arc(xP(last.ts),yP(last.wind),4,0,Math.PI*2); ctx.fillStyle='#38bdf8'; ctx.fill();
   ctx.restore();
+  // Update label with actual span
+  if (label) {
+    const spanMin = Math.round(spanMs / 60000);
+    const spanLabel = spanMin >= 90 ? `Last ${Math.round(spanMin/60)} hrs` : `Last ${spanMin} min`;
+    label.textContent = spanLabel;
+  }
 }
 <\/script>
 </body>
