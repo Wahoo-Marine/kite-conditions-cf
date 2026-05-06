@@ -9,7 +9,7 @@
 
 const TWITCH_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
 const GQL_URL = 'https://gql.twitch.tv/gql';
-const USHER_URL = 'https://usher.twitchapps.com/api/channel/hls';
+const USHER_URL = 'https://usher.twitch.tv/hls';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
