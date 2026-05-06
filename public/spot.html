@@ -431,7 +431,7 @@ async function initTwitchHLS(channel, idx) {
       if (loadingEl) loadingEl.style.display = 'none';
     } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
       const hls = new Hls({
-        enableWorker: true,
+        enableWorker: false, // keep on main thread so cookies/credentials are always included
         lowLatencyMode: true,
         maxBufferLength: 10,
         maxMaxBufferLength: 30,
@@ -446,18 +446,27 @@ async function initTwitchHLS(channel, idx) {
         if (loadingEl) loadingEl.style.display = 'none';
       });
       hls.on(Hls.Events.ERROR, async (event, data) => {
-        if (data.fatal) {
-          hls.destroy();
-          // Check whether Access is blocking us (session expired) or stream is just offline
-          try {
-            const probe = await fetch(hlsUrl, { redirect: 'manual' });
-            if (probe.type === 'opaqueredirect' || probe.status === 0) {
-              twitchAuthExpired(channel, idx);
-              return;
-            }
-          } catch (e) { /* network down — fall through to retry */ }
-          twitchFallback(channel, idx, true);
+        // Show non-fatal errors in the loading indicator for diagnosis
+        if (!data.fatal) {
+          console.warn('HLS non-fatal:', data.type, data.details, data.response?.code);
+          return;
         }
+        console.error('HLS fatal:', data.type, data.details, data.response?.code, data.response?.url);
+        hls.destroy();
+
+        // Surface the error visibly for diagnosis
+        const errMsg = `${data.type} / ${data.details}` + (data.response?.code ? ` (HTTP ${data.response.code})` : '');
+
+        // Check whether Access is blocking us (session expired)
+        try {
+          const probe = await fetch(hlsUrl, { redirect: 'manual' });
+          if (probe.type === 'opaqueredirect' || probe.status === 0) {
+            twitchAuthExpired(channel, idx);
+            return;
+          }
+        } catch (e) { /* fall through */ }
+
+        twitchFallback(channel, idx, true, errMsg);
       });
       video._hls = hls;
     } else {
@@ -465,7 +474,7 @@ async function initTwitchHLS(channel, idx) {
     }
   } catch (err) {
     console.warn('Twitch HLS failed for', channel, err.message);
-    twitchFallback(channel, idx, true);
+    twitchFallback(channel, idx, true, err.message);
   }
 }
 
@@ -487,7 +496,7 @@ function twitchAuthExpired(channel, idx) {
     </div>`;
 }
 
-function twitchFallback(channel, idx, retry = false) {
+function twitchFallback(channel, idx, retry = false, errMsg = '') {
   // Fall back to auto-refreshing thumbnail
   const video = document.getElementById(`wc-video-${idx}`);
   if (!video) return;
@@ -514,7 +523,8 @@ function twitchFallback(channel, idx, retry = false) {
       <img style="width:100%;height:100%;object-fit:cover;filter:brightness(0.5);" src="${thumbUrl}?ts=${Date.now()}">
       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;color:#fff;text-align:center;padding:1rem;">
         <div style="font-size:.8rem;color:rgba(255,255,255,.8);">Stream offline or unavailable</div>
-        <button onclick="this.closest('.webcam-wrap')?.querySelector('video')?.id && initTwitchHLS('${channel}', ${idx})" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;padding:.3rem .9rem;border-radius:6px;cursor:pointer;font-size:.75rem;">↺ Retry</button>
+        ${errMsg ? `<div style="font-size:.65rem;color:rgba(255,255,255,.5);font-family:monospace;max-width:90%;word-break:break-all;">${errMsg}</div>` : ''}
+        <button onclick="initTwitchHLS('${channel}', ${idx})" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;padding:.3rem .9rem;border-radius:6px;cursor:pointer;font-size:.75rem;">↺ Retry</button>
       </div>`;
     // Also auto-retry after 90s
     const t = setTimeout(() => initTwitchHLS(channel, idx), 90000);
