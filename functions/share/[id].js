@@ -575,6 +575,7 @@ function renderWindChart(history, hours) {
   canvas.width = W*dpr; canvas.height = H*dpr; canvas.style.width=W+'px'; canvas.style.height=H+'px';
   ctx.save(); ctx.scale(dpr,dpr);
   ctx.clearRect(0,0,W,H);
+  const PL=36, PR=12, PT=12, PB=22, cW=W-PL-PR, cH=H-PT-PB;
   // Normalise ts: may be ms number or ISO date string
   const toMs = ts => typeof ts === 'number' ? ts : new Date(ts).getTime();
   if (!history||history.length<2) { if(label) label.textContent='Wind history building up\u2026'; ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,0,W,H); ctx.restore(); return; }
