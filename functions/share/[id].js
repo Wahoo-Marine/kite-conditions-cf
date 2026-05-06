@@ -490,7 +490,7 @@ function renderTideChart(dayIdx, tide) {
 // ── Live Wind ─────────────────────────────────────────────────────────────────
 async function loadWindData() {
   try {
-    const res = await fetch('/share/wind/' + __SPOT_ID__);
+    const res = await fetch('/api/wind/' + __SPOT_ID__);
     if (!res.ok) throw new Error('no data');
     const data = await res.json();
     if (data.current && data.current.station_location) {
