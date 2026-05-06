@@ -900,7 +900,10 @@ function renderWindChart(history, hours) {
     return;
   }
 
-  label.textContent = `Last ${hours} hours — Wind Speed (solid) & Gusts (dashed)`;
+  const spanMs = history[history.length - 1].ts - history[0].ts;
+  const spanMin = Math.round(spanMs / 60000);
+  const spanLabel = spanMin < 90 ? spanMin + ' min' : Math.round(spanMin / 60 * 10) / 10 + ' hrs';
+  label.textContent = `Last ${spanLabel} — Wind Speed (solid) & Gusts (dashed)`;
 
   const PAD_LEFT = 42;
   const PAD_RIGHT = 15;
