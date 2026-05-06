@@ -30,7 +30,6 @@ export async function onRequestGet(context) {
         'Content-Type': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Referer': 'https://www.twitch.tv/',
-        'Origin': 'https://www.twitch.tv',
       },
       body: JSON.stringify({
         query: `{ streamPlaybackAccessToken(channelName: "${channel}", params: { platform: "web", playerBackend: "mediaplayer", playerType: "site" }) { value signature } }`,
@@ -66,7 +65,6 @@ export async function onRequestGet(context) {
         'Client-ID': TWITCH_CLIENT_ID,
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Referer': 'https://www.twitch.tv/',
-        'Origin': 'https://www.twitch.tv',
       },
       signal: AbortSignal.timeout(8000),
     });
