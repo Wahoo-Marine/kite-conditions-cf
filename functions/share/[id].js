@@ -571,10 +571,13 @@ function renderWindChart(history, hours) {
   if (!history||history.length<2) { if(label) label.textContent='Wind history building up\u2026'; ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,0,W,H); return; }
   if(label) label.textContent='Last '+hours+' hours \u2014 Wind Speed (solid) & Gusts (dashed)';
   const PL=42,PR=15,PT=20,PB=35,cW=W-PL-PR,cH=H-PT-PB;
-  const allV=history.flatMap(h=>[h.wind,h.gust]).filter(v=>v!=null);
+  // Normalise ts: may be ms number or ISO date string
+  const toMs = ts => typeof ts === 'number' ? ts : new Date(ts).getTime();
+  const allV=history.flatMap(h=>[h.wind,h.gust]).filter(v=>v!=null&&!isNaN(v));
+  if (!allV.length) return;
   const maxV=Math.max(Math.ceil(Math.max(...allV)/5)*5,20);
-  const tMin=history[0].ts,tMax=history[history.length-1].ts,tR=tMax-tMin||1;
-  const xP=ts=>PL+((ts-tMin)/tR)*cW, yP=v=>PT+cH-(v/maxV)*cH;
+  const tMin=toMs(history[0].ts),tMax=toMs(history[history.length-1].ts),tR=tMax-tMin||1;
+  const xP=ts=>PL+((toMs(ts)-tMin)/tR)*cW, yP=v=>PT+cH-(v/maxV)*cH;
   ctx.fillStyle='rgba(26,39,51,0.8)'; ctx.fillRect(0,0,W,H);
   ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1; ctx.font='10px -apple-system,sans-serif'; ctx.fillStyle='#8899a6';
   const gs=maxV<=30?5:10;
@@ -593,7 +596,7 @@ function renderWindChart(history, hours) {
   ctx.strokeStyle='rgba(234,179,8,0.6)'; ctx.lineWidth=1.5; ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle='#8899a6'; ctx.font='10px -apple-system,sans-serif'; ctx.textAlign='center';
   const st=Math.max(1,Math.floor(history.length/6));
-  for(let i=0;i<history.length;i+=st){const x=xP(history[i].ts);ctx.fillText(new Date(history[i].ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),x,H-8);ctx.beginPath();ctx.moveTo(x,PT+cH);ctx.lineTo(x,PT+cH+4);ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;ctx.stroke();}
+  for(let i=0;i<history.length;i+=st){const x=xP(history[i].ts);const ms=toMs(history[i].ts);ctx.fillText(new Date(ms).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),x,H-8);ctx.beginPath();ctx.moveTo(x,PT+cH);ctx.lineTo(x,PT+cH+4);ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;ctx.stroke();}
   const last=history[history.length-1]; ctx.beginPath(); ctx.arc(xP(last.ts),yP(last.wind),4,0,Math.PI*2); ctx.fillStyle='#38bdf8'; ctx.fill();
 }
 <\/script>
