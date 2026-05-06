@@ -424,30 +424,6 @@ async function initTwitchHLS(channel, idx) {
 
     const hlsUrl = `/api/twitch-hls/${encodeURIComponent(channel)}`;
 
-    // Use redirect:'manual' so we can detect an Access session-expired redirect
-    // (a transparent follow would give us 200 HTML, which HLS.js can't parse)
-    const check = await fetch(hlsUrl, { redirect: 'manual' });
-
-    if (check.type === 'opaqueredirect' || check.status === 302 || check.status === 301) {
-      // Cloudflare Access is redirecting to the login page — session expired
-      twitchAuthExpired(channel, idx);
-      return;
-    }
-    if (!check.ok) {
-      const body = await check.text().catch(() => '');
-      throw new Error(body || `HTTP ${check.status}`);
-    }
-
-    // Confirm we got an m3u8, not an error page
-    const ct = check.headers.get('content-type') || '';
-    if (!ct.includes('mpegurl') && !ct.includes('m3u8') && !ct.includes('octet-stream')) {
-      const body = await check.text().catch(() => '');
-      if (body.includes('<!DOCTYPE') || body.includes('<html')) {
-        twitchAuthExpired(channel, idx);
-        return;
-      }
-    }
-
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Native HLS (Safari / iOS) — plays directly
       video.src = hlsUrl;
@@ -469,11 +445,18 @@ async function initTwitchHLS(channel, idx) {
         video.play().catch(() => {});
         if (loadingEl) loadingEl.style.display = 'none';
       });
-      hls.on(Hls.Events.ERROR, (event, data) => {
+      hls.on(Hls.Events.ERROR, async (event, data) => {
         if (data.fatal) {
           hls.destroy();
-          // Schedule a retry in 90s in case stream was momentarily offline
-          twitchFallback(channel, idx, /* retry= */ true);
+          // Check whether Access is blocking us (session expired) or stream is just offline
+          try {
+            const probe = await fetch(hlsUrl, { redirect: 'manual' });
+            if (probe.type === 'opaqueredirect' || probe.status === 0) {
+              twitchAuthExpired(channel, idx);
+              return;
+            }
+          } catch (e) { /* network down — fall through to retry */ }
+          twitchFallback(channel, idx, true);
         }
       });
       video._hls = hls;
@@ -482,7 +465,7 @@ async function initTwitchHLS(channel, idx) {
     }
   } catch (err) {
     console.warn('Twitch HLS failed for', channel, err.message);
-    twitchFallback(channel, idx, /* retry= */ true);
+    twitchFallback(channel, idx, true);
   }
 }
 
