@@ -422,16 +422,30 @@ async function initTwitchHLS(channel, idx) {
   try {
     if (loadingEl) loadingEl.textContent = 'Connecting to stream…';
 
-    // The Worker returns the master m3u8 directly (proxied, same-origin).
-    // All quality-level and segment URLs inside it are also routed through
-    // our /api/twitch-proxy endpoint, so there are no CORS issues.
     const hlsUrl = `/api/twitch-hls/${encodeURIComponent(channel)}`;
 
-    // Verify the Worker responds before handing to HLS player
-    const check = await fetch(hlsUrl);
+    // Use redirect:'manual' so we can detect an Access session-expired redirect
+    // (a transparent follow would give us 200 HTML, which HLS.js can't parse)
+    const check = await fetch(hlsUrl, { redirect: 'manual' });
+
+    if (check.type === 'opaqueredirect' || check.status === 302 || check.status === 301) {
+      // Cloudflare Access is redirecting to the login page — session expired
+      twitchAuthExpired(channel, idx);
+      return;
+    }
     if (!check.ok) {
-      const body = await check.text();
+      const body = await check.text().catch(() => '');
       throw new Error(body || `HTTP ${check.status}`);
+    }
+
+    // Confirm we got an m3u8, not an error page
+    const ct = check.headers.get('content-type') || '';
+    if (!ct.includes('mpegurl') && !ct.includes('m3u8') && !ct.includes('octet-stream')) {
+      const body = await check.text().catch(() => '');
+      if (body.includes('<!DOCTYPE') || body.includes('<html')) {
+        twitchAuthExpired(channel, idx);
+        return;
+      }
     }
 
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -456,7 +470,11 @@ async function initTwitchHLS(channel, idx) {
         if (loadingEl) loadingEl.style.display = 'none';
       });
       hls.on(Hls.Events.ERROR, (event, data) => {
-        if (data.fatal) { hls.destroy(); twitchFallback(channel, idx); }
+        if (data.fatal) {
+          hls.destroy();
+          // Schedule a retry in 90s in case stream was momentarily offline
+          twitchFallback(channel, idx, /* retry= */ true);
+        }
       });
       video._hls = hls;
     } else {
@@ -464,28 +482,65 @@ async function initTwitchHLS(channel, idx) {
     }
   } catch (err) {
     console.warn('Twitch HLS failed for', channel, err.message);
-    twitchFallback(channel, idx);
+    twitchFallback(channel, idx, /* retry= */ true);
   }
 }
 
-function twitchFallback(channel, idx) {
+// Show session-expired overlay with a re-login link
+function twitchAuthExpired(channel, idx) {
+  const video = document.getElementById(`wc-video-${idx}`);
+  if (!video) return;
+  const wrap = video.parentElement;
+  if (!wrap) return;
+  if (video._hls) video._hls.destroy();
+  const thumbUrl = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(channel)}-440x248.jpg`;
+  wrap.style.position = 'relative';
+  wrap.innerHTML = `
+    <img style="width:100%;height:100%;object-fit:cover;filter:brightness(0.4);" src="${thumbUrl}?ts=${Date.now()}">
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;color:#fff;text-align:center;padding:1rem;">
+      <div style="font-size:1.5rem;">🔒</div>
+      <div style="font-size:.85rem;font-weight:600;">Session expired</div>
+      <a href="/" style="background:var(--accent);color:#fff;padding:.4rem 1rem;border-radius:8px;font-size:.8rem;text-decoration:none;">Re-login →</a>
+    </div>`;
+}
+
+function twitchFallback(channel, idx, retry = false) {
   // Fall back to auto-refreshing thumbnail
   const video = document.getElementById(`wc-video-${idx}`);
   if (!video) return;
   const wrap = video.parentElement;
   if (!wrap) return;
   const thumbUrl = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(channel)}-440x248.jpg`;
+
+  // If stream was temporarily offline, add a retry button + schedule auto-retry
+  const retryBtn = retry
+    ? `<button onclick="location.reload()" style="margin-top:.5rem;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;padding:.3rem .9rem;border-radius:6px;cursor:pointer;font-size:.75rem;">↺ Retry</button>`
+    : '';
+
   const img = document.createElement('img');
   img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
   img.src = thumbUrl + '?ts=' + Date.now();
   const loading = document.getElementById(`wc-loading-${idx}`);
   if (loading) loading.style.display = 'none';
   if (video._hls) video._hls.destroy();
-  wrap.replaceChild(img, video);
-  const t = setInterval(() => {
-    img.src = thumbUrl + '?ts=' + Date.now();
-  }, 30000);
-  webcamTimers.push(t);
+
+  if (retry) {
+    // Show thumbnail + overlay with retry button
+    wrap.style.position = 'relative';
+    wrap.innerHTML = `
+      <img style="width:100%;height:100%;object-fit:cover;filter:brightness(0.5);" src="${thumbUrl}?ts=${Date.now()}">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.5rem;color:#fff;text-align:center;padding:1rem;">
+        <div style="font-size:.8rem;color:rgba(255,255,255,.8);">Stream offline or unavailable</div>
+        <button onclick="this.closest('.webcam-wrap')?.querySelector('video')?.id && initTwitchHLS('${channel}', ${idx})" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;padding:.3rem .9rem;border-radius:6px;cursor:pointer;font-size:.75rem;">↺ Retry</button>
+      </div>`;
+    // Also auto-retry after 90s
+    const t = setTimeout(() => initTwitchHLS(channel, idx), 90000);
+    webcamTimers.push(t);
+  } else {
+    wrap.replaceChild(img, video);
+    const t = setInterval(() => { img.src = thumbUrl + '?ts=' + Date.now(); }, 30000);
+    webcamTimers.push(t);
+  }
 }
 
 // ── Ozolio HLS Live Video ─────────────
