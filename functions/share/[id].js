@@ -575,15 +575,11 @@ function renderWindChart(history, hours) {
   canvas.width = W*dpr; canvas.height = H*dpr; canvas.style.width=W+'px'; canvas.style.height=H+'px';
   ctx.save(); ctx.scale(dpr,dpr);
   ctx.clearRect(0,0,W,H);
+  // Normalise ts: may be ms number or ISO date string
+  const toMs = ts => typeof ts === 'number' ? ts : new Date(ts).getTime();
   if (!history||history.length<2) { if(label) label.textContent='Wind history building up\u2026'; ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,0,W,H); ctx.restore(); return; }
   // Show actual span of data, not just the configured max window
   const spanMs = toMs(history[history.length-1].ts) - toMs(history[0].ts);
-  const spanMin = Math.round(spanMs / 60000);
-  const spanLabel = spanMin < 90 ? spanMin + ' min' : Math.round(spanMin / 60 * 10) / 10 + ' hrs';
-  if(label) label.textContent='Last ' + spanLabel + ' \u2014 Wind Speed (solid) & Gusts (dashed)';
-  const PL=42,PR=15,PT=20,PB=35,cW=W-PL-PR,cH=H-PT-PB;
-  // Normalise ts: may be ms number or ISO date string
-  const toMs = ts => typeof ts === 'number' ? ts : new Date(ts).getTime();
   const allV=history.flatMap(h=>[h.wind,h.gust]).filter(v=>v!=null&&!isNaN(v));
   if (!allV.length) return;
   const maxV=Math.max(Math.ceil(Math.max(...allV)/5)*5,20);
