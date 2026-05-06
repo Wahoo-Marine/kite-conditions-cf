@@ -517,7 +517,17 @@ async function loadWindData() {
   try {
     const res = await fetch('/share/wind/' + __SPOT_ID__);
     if (!res.ok) throw new Error('no data');
-    renderWindData(await res.json());
+    const data = await res.json();
+    if (data.current && data.current.station_location) {
+      const hdr = document.querySelector('.wind-station-header');
+      if (hdr) hdr.textContent = '\u{1F32C}\uFE0F Live Wind \u2014 ' + data.current.station_location;
+    }
+    renderWindLive(data.current);
+    if (data.history) {
+      lastWindHistory = data.history;
+      lastWindHours = data.history_hours;
+      requestAnimationFrame(() => requestAnimationFrame(() => renderWindChart(data.history, data.history_hours)));
+    }
   } catch (e) {
     const p = $('#wind-live-panel');
     if (p) p.innerHTML = '<div class="wind-live-loading" style="color:var(--text-muted);">Wind data temporarily unavailable</div>';
@@ -565,8 +575,14 @@ function renderWindChart(history, hours) {
   const canvas = $('#wind-chart'), label = $('#wind-chart-label');
   if (!canvas) return;
   const ctx = canvas.getContext('2d'), dpr = window.devicePixelRatio || 1;
-  const W = canvas.parentElement.getBoundingClientRect().width || 800, H = 220;
-  canvas.width = W*dpr; canvas.height = H*dpr; canvas.style.width=W+'px'; canvas.style.height=H+'px'; ctx.scale(dpr,dpr);
+  // Walk up DOM to find a visible ancestor with real width
+  let W = 0;
+  let node = canvas.parentElement;
+  while (node && !W) { W = node.getBoundingClientRect().width; node = node.parentElement; }
+  W = Math.floor((W || 800));
+  const H = 220;
+  canvas.width = W*dpr; canvas.height = H*dpr; canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  ctx.save(); ctx.scale(dpr,dpr);
   ctx.clearRect(0,0,W,H);
   if (!history||history.length<2) { if(label) label.textContent='Wind history building up\u2026'; ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(0,0,W,H); return; }
   if(label) label.textContent='Last '+hours+' hours \u2014 Wind Speed (solid) & Gusts (dashed)';
@@ -598,6 +614,7 @@ function renderWindChart(history, hours) {
   const st=Math.max(1,Math.floor(history.length/6));
   for(let i=0;i<history.length;i+=st){const x=xP(history[i].ts);const ms=toMs(history[i].ts);ctx.fillText(new Date(ms).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),x,H-8);ctx.beginPath();ctx.moveTo(x,PT+cH);ctx.lineTo(x,PT+cH+4);ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;ctx.stroke();}
   const last=history[history.length-1]; ctx.beginPath(); ctx.arc(xP(last.ts),yP(last.wind),4,0,Math.PI*2); ctx.fillStyle='#38bdf8'; ctx.fill();
+  ctx.restore();
 }
 <\/script>
 </body>
