@@ -178,16 +178,16 @@ function renderSpot(data) {
     wcHTML += '<div class="webcams-grid">';
     webcams.forEach((cam, idx) => {
       if (cam.twitch) {
-        // Twitch: fetch HLS URL via our proxy Worker, play with native <video> (works on iOS)
-        const thumbUrl = `https://static-cdn.jtvnw.net/previews-ttv/live_user_${encodeURIComponent(cam.twitch)}-440x248.jpg`;
+        // Twitch: official iframe embed player
+        const twitchParent = window.location.hostname;
         wcHTML += `<div class="webcam-card">
-          <div class="webcam-iframe-wrap" style="position:relative;background:#000;">
-            <video id="wc-video-${idx}" class="webcam-hls-video"
-              poster="${thumbUrl}"
-              autoplay muted playsinline
-              style="width:100%;height:100%;object-fit:cover;"
-            ></video>
-            <div id="wc-loading-${idx}" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:.7rem;opacity:.7;pointer-events:none;">Loading live video…</div>
+          <div class="webcam-iframe-wrap">
+            <iframe
+              src="https://player.twitch.tv/?channel=${encodeURIComponent(cam.twitch)}&parent=${twitchParent}&autoplay=true&muted=true"
+              allowfullscreen
+              allow="autoplay; encrypted-media"
+              style="border:0;width:100%;height:100%;"
+            ></iframe>
           </div>
           <div class="webcam-footer">
             <span class="webcam-label">${esc(cam.label)}</span>
@@ -253,14 +253,6 @@ function renderSpot(data) {
       ozolioCams.forEach((cam, i) => {
         const idx = webcams.indexOf(cam);
         initOzolioHLS(cam.oid, idx);
-      });
-    }
-    // Initialize HLS live video for Twitch webcams
-    const twitchCams = webcams.filter(c => c.twitch);
-    if (twitchCams.length > 0) {
-      twitchCams.forEach((cam) => {
-        const idx = webcams.indexOf(cam);
-        initTwitchHLS(cam.twitch, idx);
       });
     }
     // Auto-refresh Hazcam thumbnails every 60s
