@@ -41,11 +41,6 @@ export async function onRequestGet(context) {
 
   let days = [], current = null, tz = '';
 
-  // Fetch wind data directly from KV + WeatherLink (no HTTP round-trip through Access)
-  const windPromise = spot.weather_station
-    ? fetchWindDirect(spotId, spot.weather_station, env)
-    : Promise.resolve(null);
-
   const [forecastResult, tidesResult] = await Promise.allSettled([
     fetchForecast(spot.lat, spot.lon, env.CACHE),
     fetchTides(spot.lat, spot.lon, env.CACHE),
@@ -66,12 +61,10 @@ export async function onRequestGet(context) {
     });
   }
 
-  const windData = await windPromise;
   const data = JSON.stringify({ spot: { ...spot, webcams, days, timezone: tz }, current });
-  const windJson = JSON.stringify(windData);
 
   // ── Render HTML ──────────────────────────────────────────────────────────
-  const html = buildHtml(spot.name, spot.id, !!spot.weather_station, webcams, data, windJson);
+  const html = buildHtml(spot.name, spot.id, !!spot.weather_station, webcams, data, 'null');
   return new Response(html, {
     headers: {
       'Content-Type': 'text/html; charset=UTF-8',
@@ -148,20 +141,9 @@ let lastWindHistory = null, lastWindHours = 6;
 
 document.addEventListener('DOMContentLoaded', () => {
   renderSpot(__DATA__);
-  if (__HAS_WIND__ && __WIND__) {
-    renderWindLive(__WIND__.current);
-    if (__WIND__.current && __WIND__.current.station_location) {
-      const hdr = document.querySelector('.wind-station-header');
-      if (hdr) hdr.textContent = '\u{1F32C}\uFE0F Live Wind \u2014 ' + __WIND__.current.station_location;
-    }
-    lastWindHistory = __WIND__.history;
-    lastWindHours = __WIND__.history_hours;
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (lastWindHistory) renderWindChart(lastWindHistory, lastWindHours);
-    }));
-    window.addEventListener('resize', () => { if (lastWindHistory) renderWindChart(lastWindHistory, lastWindHours); });
-    // Refresh wind data immediately (baked-in data may be stale)
+  if (__HAS_WIND__) {
     loadWindData();
+    window.addEventListener('resize', () => { if (lastWindHistory) renderWindChart(lastWindHistory, lastWindHours); });
   }
 });
 
@@ -628,96 +610,6 @@ function esc(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-// Fetch wind data directly from KV/WeatherLink without going through the Access-protected API
-async function fetchWindDirect(spotId, token, env) {
-  const HISTORY_KEY = `wind-history:${spotId}`;
-  const CURRENT_KEY = `wind-current:${spotId}`;
-  const MIN_INTERVAL = 30; // seconds
-
-  let current = null;
-  let history = [];
-
-  try {
-    // Load history from KV
-    const rawHistory = await env.CACHE.get(HISTORY_KEY, { type: 'json' });
-    if (rawHistory && Array.isArray(rawHistory)) history = rawHistory;
-
-    // Check cached current
-    const cachedCurrent = await env.CACHE.get(CURRENT_KEY, { type: 'json' });
-    const now = Math.floor(Date.now() / 1000);
-
-    if (cachedCurrent && (now - cachedCurrent.ts) < MIN_INTERVAL) {
-      current = cachedCurrent.data;
-    } else if (token.startsWith('ndbc:')) {
-      // NDBC buoy
-      const stid = token.slice(5).toUpperCase();
-      const resp = await fetch(`https://www.ndbc.noaa.gov/data/realtime2/${stid}.txt`, {
-        signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'KiteConditions/1.0' },
-      });
-      if (resp.ok) {
-        const lines = (await resp.text()).trim().split('\n').filter(l => !l.startsWith('#'));
-        if (lines.length) {
-          const p = lines[0].trim().split(/\s+/);
-          const MPS = 2.23694;
-          const wspd = parseFloat(p[6]), gst = parseFloat(p[7]), wdir = parseFloat(p[5]), atmp = parseFloat(p[13]);
-          const readingTs = Date.UTC(...p.slice(0,5).map(Number).map((v,i) => i===1 ? v-1 : v));
-          current = {
-            wind: isNaN(wspd) ? 0 : Math.round(wspd * MPS * 10) / 10,
-            gust: isNaN(gst) ? 0 : Math.round(gst * MPS * 10) / 10,
-            wind_dir: isNaN(wdir) ? 0 : wdir,
-            wind_dir_cardinal: degreesToCardinal(isNaN(wdir) ? 0 : wdir),
-            temp: isNaN(atmp) ? null : Math.round(atmp * 9/5 + 32),
-            wind_units: 'mph', last_received: new Date(readingTs).toISOString(),
-          };
-          await env.CACHE.put(CURRENT_KEY, JSON.stringify({ ts: now, data: current }), { expirationTtl: 120 });
-        }
-      }
-    } else {
-      // WeatherLink
-      const resp = await fetch(`https://www.weatherlink.com/embeddablePage/getData/${token}`, {
-        signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'KiteConditions/1.0' },
-      });
-      if (resp.ok) {
-        const d = await resp.json();
-        current = {
-          wind: parseFloat(d.wind) || 0,
-          gust: parseFloat(d.gust) || 0,
-          wind_dir: d.windDirection || 0,
-          wind_dir_cardinal: degreesToCardinal(d.windDirection || 0),
-          temp: parseFloat(d.temperature) || null,
-          feels_like: parseFloat(d.temperatureFeelLike) || null,
-          humidity: parseFloat(d.humidity) || null,
-          hi_temp: parseFloat(d.hiTemp) || null,
-          lo_temp: parseFloat(d.loTemp) || null,
-          barometer: d.barometer || null,
-          barometer_trend: d.barometerTrend || null,
-          wind_units: d.windUnits || 'mph',
-          last_received: d.lastReceived || null,
-          station_location: d.systemLocation || null,
-        };
-        await env.CACHE.put(CURRENT_KEY, JSON.stringify({ ts: now, data: current }), { expirationTtl: 120 });
-        // Append to history
-        const lastReading = history.length > 0 ? history[history.length - 1] : null;
-        if (!lastReading || lastReading.ts !== current.last_received) {
-          history.push({ ts: Date.now(), wind: current.wind, gust: current.gust, dir: current.wind_dir, temp: current.temp });
-          const cutoff = Date.now() - 6 * 60 * 60 * 1000;
-          history = history.filter(h => h.ts > cutoff);
-          await env.CACHE.put(HISTORY_KEY, JSON.stringify(history), { expirationTtl: 86400 });
-        }
-      }
-    }
-  } catch (e) {
-    // Fall back to cached current if available
-    if (!current) {
-      const c = await env.CACHE.get(CURRENT_KEY, { type: 'json' }).catch(() => null);
-      if (c) current = c.data;
-    }
-  }
-
-  if (!current) return null;
-  return { current, history, history_hours: 6 };
 }
 
 function degreesToCardinal(deg) {
