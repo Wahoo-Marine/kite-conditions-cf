@@ -152,8 +152,21 @@ let lastWindHistory = null, lastWindHours = 6;
 document.addEventListener('DOMContentLoaded', () => {
   renderSpot(__DATA__);
   if (__HAS_WIND__) {
-    if (__WIND__) renderWindData(__WIND__);
-    else loadWindData();
+    if (__WIND__) {
+      renderWindLive(__WIND__.current);
+      if (__WIND__.current && __WIND__.current.station_location) {
+        const hdr = document.querySelector('.wind-station-header');
+        if (hdr) hdr.textContent = '\u{1F32C}\uFE0F Live Wind \u2014 ' + __WIND__.current.station_location;
+      }
+      lastWindHistory = __WIND__.history;
+      lastWindHours = __WIND__.history_hours;
+      // Defer chart until after browser layout so canvas has real dimensions
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (lastWindHistory) renderWindChart(lastWindHistory, lastWindHours);
+      }));
+    } else {
+      loadWindData();
+    }
     setInterval(loadWindData, 60000);
     window.addEventListener('resize', () => { if (lastWindHistory) renderWindChart(lastWindHistory, lastWindHours); });
   }
