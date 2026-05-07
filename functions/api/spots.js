@@ -93,6 +93,9 @@ export async function onRequestPost(context) {
   const hasSlug = await hasShortSlugColumn(env);
   if (!hasSlug && shortSlug) {
     await ensureShortSlugSchema(env);
+    if (!(await hasShortSlugColumn(env))) {
+      return Response.json({ error: 'Short names are not available yet; please retry in a minute' }, { status: 503 });
+    }
   }
 
   if (!name) return Response.json({ error: 'Name is required' }, { status: 400 });

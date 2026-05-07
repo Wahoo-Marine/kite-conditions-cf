@@ -59,6 +59,9 @@ export async function onRequestPut(context) {
 
   if (!hasSlug && shortSlug) {
     await ensureShortSlugSchema(env);
+    if (!(await hasShortSlugColumn(env))) {
+      return Response.json({ error: 'Short names are not available yet; please retry in a minute' }, { status: 503 });
+    }
   }
 
   try {
