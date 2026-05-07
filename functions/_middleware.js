@@ -17,8 +17,9 @@ function normalizeShortSlug(value) {
 function fallbackNameMatch(results, slug) {
   return (results || []).find(r => {
     const full = normalizeShortSlug(r.name);
-    const first = full ? full.split('-')[0] : null;
-    return slug === full || slug === first;
+    if (!full) return false;
+    const tokens = full.split('-').filter(Boolean);
+    return slug === full || tokens.includes(slug);
   });
 }
 
@@ -38,7 +39,7 @@ export async function onRequest(context) {
 
   try {
     const spotsResp = await fetch(`${url.origin}/api/spots?source=defaults`, { headers: { 'Accept': 'application/json' } });
-    if (!spotsResp.ok) return context.next();
+    if (!spotsResp.ok) return new Response('Not found', { status: 404 });
     const results = await spotsResp.json();
 
     let match = (results || []).find(s => normalizeShortSlug(s.short_slug) === slug);
@@ -49,8 +50,8 @@ export async function onRequest(context) {
       return Response.redirect(url.toString(), 302);
     }
   } catch {
-    // On any error, do not block normal site routing
+    return new Response('Not found', { status: 404 });
   }
 
-  return context.next();
+  return new Response('Not found', { status: 404 });
 }
