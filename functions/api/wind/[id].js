@@ -45,7 +45,10 @@ export async function onRequestGet(context) {
   try {
     const raw = await env.CACHE.get(historyKey, { type: 'json' });
     if (raw && Array.isArray(raw)) {
-      history = raw;
+      history = raw
+        .map(h => ({ ...h, ts: normalizeTimestamp(h.ts, null) }))
+        .filter(h => h.ts != null && Number.isFinite(h.ts))
+        .sort((a, b) => a.ts - b.ts);
       // Migration: if all gust values are identical (stale daily-high), mark for recompute
       if (history.length > 2) {
         const gusts = history.map(h => h.gust).filter(g => g != null);
@@ -129,10 +132,11 @@ export async function onRequestGet(context) {
 
       // Append to history if it's a genuinely new reading
       const lastReading = history.length > 0 ? history[history.length - 1] : null;
-      const readingTs = wlData.lastReceived || (now * 1000);
+      const readingTs = normalizeTimestamp(wlData.lastReceived, now * 1000);
+      const lastTs = lastReading ? normalizeTimestamp(lastReading.ts, null) : null;
 
       // Only add if this is a different timestamp than the last reading
-      if (!lastReading || lastReading.ts !== readingTs) {
+      if (!lastReading || lastTs == null || lastTs !== readingTs) {
         // Store the raw wind speed — we'll compute rolling-window gust below
         history.push({
           ts: readingTs,
@@ -144,6 +148,7 @@ export async function onRequestGet(context) {
         // Trim history to HISTORY_HOURS
         const cutoff = Date.now() - (HISTORY_HOURS * 60 * 60 * 1000);
         history = history.filter(h => h.ts > cutoff);
+        history.sort((a, b) => a.ts - b.ts);
 
         // Compute per-entry rolling gust: max wind over a ±10-minute window
         // This replaces the stale daily-high gust from the WeatherLink embed API
@@ -252,7 +257,12 @@ async function handleNdbc(stid, spotId, spotName, env) {
       let history = [];
       try {
         const raw = await env.CACHE.get(historyKey, { type: 'json' });
-        if (raw && Array.isArray(raw)) history = raw;
+        if (raw && Array.isArray(raw)) {
+          history = raw
+            .map(h => ({ ...h, ts: normalizeTimestamp(h.ts, null) }))
+            .filter(h => h.ts != null && Number.isFinite(h.ts))
+            .sort((a, b) => a.ts - b.ts);
+        }
       } catch (e) { /* ignore */ }
 
       const lastReading = history.length > 0 ? history[history.length - 1] : null;
@@ -266,7 +276,12 @@ async function handleNdbc(stid, spotId, spotName, env) {
       let history2 = [];
       try {
         const raw = await env.CACHE.get(historyKey, { type: 'json' });
-        if (raw && Array.isArray(raw)) history2 = raw;
+        if (raw && Array.isArray(raw)) {
+          history2 = raw
+            .map(h => ({ ...h, ts: normalizeTimestamp(h.ts, null) }))
+            .filter(h => h.ts != null && Number.isFinite(h.ts))
+            .sort((a, b) => a.ts - b.ts);
+        }
       } catch (e) { /* ignore */ }
 
       return Response.json({
@@ -288,7 +303,12 @@ async function handleNdbc(stid, spotId, spotName, env) {
   let history = [];
   try {
     const raw = await env.CACHE.get(historyKey, { type: 'json' });
-    if (raw && Array.isArray(raw)) history = raw;
+    if (raw && Array.isArray(raw)) {
+      history = raw
+        .map(h => ({ ...h, ts: normalizeTimestamp(h.ts, null) }))
+        .filter(h => h.ts != null && Number.isFinite(h.ts))
+        .sort((a, b) => a.ts - b.ts);
+    }
   } catch (e) { /* ignore */ }
 
   return Response.json({
@@ -301,6 +321,19 @@ async function handleNdbc(stid, spotId, spotName, env) {
   }, { headers: { 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' } });
 }
 // ─────────────────────────────────────────────────────────────────────────────
+
+function normalizeTimestamp(value, fallback = null) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    if (/^\d+$/.test(value)) {
+      const n = Number(value);
+      if (Number.isFinite(n)) return n;
+    }
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
 
 function degreesToCardinal(deg) {
   if (deg == null || isNaN(deg)) return '?';

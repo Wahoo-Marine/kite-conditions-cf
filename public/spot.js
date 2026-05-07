@@ -810,7 +810,13 @@ function renderWindChart(history, hours) {
   // Clear
   ctx.clearRect(0, 0, W, H);
 
-  if (!history || history.length < 2) {
+  const toMs = ts => typeof ts === 'number' ? ts : new Date(ts).getTime();
+  const series = (history || [])
+    .map(h => ({ ...h, ts: toMs(h.ts) }))
+    .filter(h => Number.isFinite(h.ts))
+    .sort((a, b) => a.ts - b.ts);
+
+  if (series.length < 2) {
     label.textContent = `Wind history building up — data appears as readings are collected over ${hours} hours`;
     ctx.fillStyle = 'rgba(255,255,255,0.1)';
     ctx.fillRect(0, 0, W, H);
@@ -821,7 +827,7 @@ function renderWindChart(history, hours) {
     return;
   }
 
-  const spanMs = history[history.length - 1].ts - history[0].ts;
+  const spanMs = series[series.length - 1].ts - series[0].ts;
   const spanMin = Math.round(spanMs / 60000);
   const spanLabel = spanMin < 90 ? spanMin + ' min' : Math.round(spanMin / 60 * 10) / 10 + ' hrs';
   label.textContent = `Last ${spanLabel} — Wind Speed (solid) & Gusts (dashed)`;
@@ -834,12 +840,12 @@ function renderWindChart(history, hours) {
   const chartH = H - PAD_TOP - PAD_BOTTOM;
 
   // Data bounds
-  const allVals = history.flatMap(h => [h.wind, h.gust]).filter(v => v != null);
+  const allVals = series.flatMap(h => [h.wind, h.gust]).filter(v => v != null);
   const minVal = 0;
   const maxVal = Math.max(Math.ceil(Math.max(...allVals) / 5) * 5, 20);
 
-  const tMin = history[0].ts;
-  const tMax = history[history.length - 1].ts;
+  const tMin = series[0].ts;
+  const tMax = series[series.length - 1].ts;
   const tRange = tMax - tMin || 1;
 
   function xPos(ts) { return PAD_LEFT + ((ts - tMin) / tRange) * chartW; }
@@ -875,18 +881,18 @@ function renderWindChart(history, hours) {
 
   // Wind speed line (filled area)
   ctx.beginPath();
-  ctx.moveTo(xPos(history[0].ts), yPos(history[0].wind));
-  for (let i = 1; i < history.length; i++) {
-    ctx.lineTo(xPos(history[i].ts), yPos(history[i].wind));
+  ctx.moveTo(xPos(series[0].ts), yPos(series[0].wind));
+  for (let i = 1; i < series.length; i++) {
+    ctx.lineTo(xPos(series[i].ts), yPos(series[i].wind));
   }
   // Fill under
   const windPath = new Path2D();
-  windPath.moveTo(xPos(history[0].ts), yPos(history[0].wind));
-  for (let i = 1; i < history.length; i++) {
-    windPath.lineTo(xPos(history[i].ts), yPos(history[i].wind));
+  windPath.moveTo(xPos(series[0].ts), yPos(series[0].wind));
+  for (let i = 1; i < series.length; i++) {
+    windPath.lineTo(xPos(series[i].ts), yPos(series[i].wind));
   }
-  windPath.lineTo(xPos(history[history.length - 1].ts), yPos(0));
-  windPath.lineTo(xPos(history[0].ts), yPos(0));
+  windPath.lineTo(xPos(series[series.length - 1].ts), yPos(0));
+  windPath.lineTo(xPos(series[0].ts), yPos(0));
   windPath.closePath();
 
   const gradient = ctx.createLinearGradient(0, PAD_TOP, 0, PAD_TOP + chartH);
@@ -897,9 +903,9 @@ function renderWindChart(history, hours) {
 
   // Wind speed line
   ctx.beginPath();
-  ctx.moveTo(xPos(history[0].ts), yPos(history[0].wind));
-  for (let i = 1; i < history.length; i++) {
-    ctx.lineTo(xPos(history[i].ts), yPos(history[i].wind));
+  ctx.moveTo(xPos(series[0].ts), yPos(series[0].wind));
+  for (let i = 1; i < series.length; i++) {
+    ctx.lineTo(xPos(series[i].ts), yPos(series[i].wind));
   }
   ctx.strokeStyle = '#38bdf8';
   ctx.lineWidth = 2;
@@ -908,9 +914,9 @@ function renderWindChart(history, hours) {
   // Gust line (dashed)
   ctx.beginPath();
   ctx.setLineDash([4, 4]);
-  ctx.moveTo(xPos(history[0].ts), yPos(history[0].gust));
-  for (let i = 1; i < history.length; i++) {
-    ctx.lineTo(xPos(history[i].ts), yPos(history[i].gust));
+  ctx.moveTo(xPos(series[0].ts), yPos(series[0].gust));
+  for (let i = 1; i < series.length; i++) {
+    ctx.lineTo(xPos(series[i].ts), yPos(series[i].gust));
   }
   ctx.strokeStyle = 'rgba(234, 179, 8, 0.6)';
   ctx.lineWidth = 1.5;
@@ -923,11 +929,11 @@ function renderWindChart(history, hours) {
   ctx.textAlign = 'center';
 
   // Show ~6 time labels
-  const labelCount = Math.min(6, history.length);
-  const step = Math.max(1, Math.floor(history.length / labelCount));
-  for (let i = 0; i < history.length; i += step) {
-    const x = xPos(history[i].ts);
-    const t = new Date(history[i].ts);
+  const labelCount = Math.min(6, series.length);
+  const step = Math.max(1, Math.floor(series.length / labelCount));
+  for (let i = 0; i < series.length; i += step) {
+    const x = xPos(series[i].ts);
+    const t = new Date(series[i].ts);
     const label = t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     ctx.fillText(label, x, H - 8);
 
@@ -974,7 +980,7 @@ function renderWindChart(history, hours) {
   ctx.fillText('Ideal 12-25 mph', PAD_LEFT + 4, idealTop + 12);
 
   // Latest value label
-  const last = history[history.length - 1];
+  const last = series[series.length - 1];
   const lx = xPos(last.ts);
   const ly = yPos(last.wind);
 
