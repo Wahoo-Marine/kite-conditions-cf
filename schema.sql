@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS spots (
   lat REAL NOT NULL,
   lon REAL NOT NULL,
   webcams TEXT DEFAULT '[]',  -- JSON array
+  short_slug TEXT DEFAULT NULL, -- optional short public path, e.g. "turks"
   weather_station TEXT DEFAULT NULL,  -- WeatherLink URL token
   sort_order INTEGER DEFAULT 0,
   user_id TEXT DEFAULT NULL,  -- NULL = default spot (visible to all); email = personal spot
@@ -12,6 +13,7 @@ CREATE TABLE IF NOT EXISTS spots (
 );
 
 CREATE INDEX IF NOT EXISTS idx_spots_user_id ON spots(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_spots_short_slug ON spots(short_slug) WHERE short_slug IS NOT NULL;
 
 -- User preferences table  
 CREATE TABLE IF NOT EXISTS preferences (

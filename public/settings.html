@@ -45,6 +45,11 @@
         <input type="text" id="spot-name" placeholder="Spot name">
       </div>
       <div class="form-group">
+        <label for="spot-short-slug">Short Name (URL)</label>
+        <input type="text" id="spot-short-slug" placeholder="turks">
+        <div style="font-size:.7rem;color:var(--text-muted);margin-top:.25rem;">Creates public URL: <code>/turks</code></div>
+      </div>
+      <div class="form-group">
         <label for="spot-lat">Latitude</label>
         <input type="number" id="spot-lat" step="any" placeholder="24.5551">
       </div>
@@ -315,9 +320,12 @@ function renderSpots() {
     const cams = Array.isArray(s.webcams) ? s.webcams : [];
     const camCount = cams.length;
     const camBadge = camCount > 0 ? ` <span style="font-size:.7rem;color:var(--text-muted);">📹 ${camCount} cam${camCount > 1 ? 's' : ''}</span>` : '';
+    const slugBadge = s.short_slug
+      ? ` <a href="/${encodeURIComponent(s.short_slug)}" target="_blank" style="font-size:.72rem;color:var(--accent);text-decoration:none;">🔗 /${esc(s.short_slug)}</a>`
+      : '';
     html += `<div class="spot-card" data-id="${s.id}">
       <div class="spot-info">
-        <div class="spot-name">${esc(s.name)}${camBadge}</div>
+        <div class="spot-name">${esc(s.name)}${camBadge}${slugBadge}</div>
         <div class="spot-coords">${s.lat.toFixed(4)}°, ${s.lon.toFixed(4)}°</div>
       </div>
       <div class="spot-actions">
@@ -334,6 +342,7 @@ function showForm(spot = null) {
   $('#spot-form').style.display = 'block';
   $('#form-title').textContent = spot ? 'Edit Spot' : 'Add New Spot';
   $('#spot-name').value = spot ? spot.name : '';
+  $('#spot-short-slug').value = spot && spot.short_slug ? spot.short_slug : '';
   $('#spot-lat').value = spot ? spot.lat : '';
   $('#spot-lon').value = spot ? spot.lon : '';
   $('#edit-id').value = spot ? spot.id : '';
@@ -355,6 +364,7 @@ function showForm(spot = null) {
 
 function hideForm() {
   $('#spot-form').style.display = 'none';
+  $('#spot-short-slug').value = '';
   $('#edit-id').value = '';
   $('#webcam-fields').innerHTML = '';
 }
@@ -578,12 +588,18 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Save Spot ─────────────────────────
 async function saveSpot() {
   const name = $('#spot-name').value.trim();
+  const shortSlugRaw = $('#spot-short-slug').value.trim();
+  const shortSlug = shortSlugRaw.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   const lat = parseFloat($('#spot-lat').value);
   const lon = parseFloat($('#spot-lon').value);
   const editId = $('#edit-id').value;
 
   if (!name || isNaN(lat) || isNaN(lon)) {
     toast('Please fill in name, latitude, and longitude', true);
+    return;
+  }
+  if (shortSlug && !/^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$/.test(shortSlug)) {
+    toast('Short name must be 3-32 chars: a-z, 0-9, hyphen', true);
     return;
   }
 
@@ -598,7 +614,7 @@ async function saveSpot() {
     else webcams.push({ oid: value, label: label || 'Camera' });
   });
 
-  const body = { name, lat, lon, webcams, is_default: viewMode === 'defaults' };
+  const body = { name, lat, lon, webcams, short_slug: shortSlug || null, is_default: viewMode === 'defaults' };
 
   try {
     let res;
@@ -616,12 +632,15 @@ async function saveSpot() {
       });
     }
 
-    if (!res.ok) throw new Error('Save failed');
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.error || 'Save failed');
+    }
     toast(editId ? 'Spot updated!' : 'Spot added!');
     hideForm();
     loadSpots();
   } catch (err) {
-    toast('Failed to save spot', true);
+    toast(err.message || 'Failed to save spot', true);
   }
 }
 

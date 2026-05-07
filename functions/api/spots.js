@@ -8,8 +8,34 @@
  */
 import { getUserEmail, isAdmin } from '../lib/auth.js';
 
+function normalizeShortSlug(value) {
+  if (!value) return null;
+  const slug = String(value).trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return slug || null;
+}
+
+function isValidShortSlug(slug) {
+  return slug == null || /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$/.test(slug);
+}
+
+async function ensureShortSlugSchema(env) {
+  try { await env.DB.prepare('ALTER TABLE spots ADD COLUMN short_slug TEXT DEFAULT NULL').run(); } catch (e) { /* already exists */ }
+  try { await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_spots_short_slug ON spots(short_slug) WHERE short_slug IS NOT NULL').run(); } catch (e) { /* ignore */ }
+}
+
+async function hasShortSlugColumn(env) {
+  try {
+    const { results } = await env.DB.prepare('PRAGMA table_info(spots)').all();
+    return (results || []).some(r => r.name === 'short_slug');
+  } catch {
+    return false;
+  }
+}
+
 export async function onRequestGet(context) {
   const { env, request } = context;
+  const hasSlug = await hasShortSlugColumn(env);
+  const slugSelect = hasSlug ? 'short_slug' : 'NULL AS short_slug';
   const url = new URL(request.url);
   const source = url.searchParams.get('source'); // 'mine' | 'defaults' | null
   const email = getUserEmail(request);
@@ -19,23 +45,23 @@ export async function onRequestGet(context) {
   if (source === 'defaults' || !email) {
     // Explicitly requesting defaults, or unauthenticated
     ({ results } = await env.DB.prepare(
-      'SELECT id, name, lat, lon, webcams, weather_station, sort_order FROM spots WHERE user_id IS NULL ORDER BY sort_order, rowid'
+      `SELECT id, name, lat, lon, webcams, ${slugSelect}, weather_station, sort_order FROM spots WHERE user_id IS NULL ORDER BY sort_order, rowid`
     ).all());
   } else if (source === 'mine') {
     // Settings page: return only personal spots (may be empty)
     ({ results } = await env.DB.prepare(
-      'SELECT id, name, lat, lon, webcams, weather_station, sort_order FROM spots WHERE user_id = ? ORDER BY sort_order, rowid'
+      `SELECT id, name, lat, lon, webcams, ${slugSelect}, weather_station, sort_order FROM spots WHERE user_id = ? ORDER BY sort_order, rowid`
     ).bind(email).all());
   } else {
     // Dashboard: user's spots, or fall back to defaults
     const personal = await env.DB.prepare(
-      'SELECT id, name, lat, lon, webcams, weather_station, sort_order FROM spots WHERE user_id = ? ORDER BY sort_order, rowid'
+      `SELECT id, name, lat, lon, webcams, ${slugSelect}, weather_station, sort_order FROM spots WHERE user_id = ? ORDER BY sort_order, rowid`
     ).bind(email).all();
     if (personal.results.length > 0) {
       results = personal.results;
     } else {
       ({ results } = await env.DB.prepare(
-        'SELECT id, name, lat, lon, webcams, weather_station, sort_order FROM spots WHERE user_id IS NULL ORDER BY sort_order, rowid'
+        `SELECT id, name, lat, lon, webcams, ${slugSelect}, weather_station, sort_order FROM spots WHERE user_id IS NULL ORDER BY sort_order, rowid`
       ).all());
     }
   }
@@ -61,10 +87,17 @@ export async function onRequestPost(context) {
   const lat = parseFloat(body.lat);
   const lon = parseFloat(body.lon);
   const webcams = body.webcams || [];
+  const shortSlug = normalizeShortSlug(body.short_slug);
   const weatherStation = body.weather_station || null;
+
+  const hasSlug = await hasShortSlugColumn(env);
+  if (!hasSlug && shortSlug) {
+    await ensureShortSlugSchema(env);
+  }
 
   if (!name) return Response.json({ error: 'Name is required' }, { status: 400 });
   if (isNaN(lat) || isNaN(lon)) return Response.json({ error: 'Invalid lat/lon' }, { status: 400 });
+  if (!isValidShortSlug(shortSlug)) return Response.json({ error: 'Short name must be 3-32 chars: a-z, 0-9, hyphen' }, { status: 400 });
 
   const id = crypto.randomUUID().slice(0, 8);
 
@@ -83,9 +116,22 @@ export async function onRequestPost(context) {
 
   const webcamsJson = JSON.stringify(webcams);
 
-  await env.DB.prepare(
-    'INSERT INTO spots (id, name, lat, lon, webcams, weather_station, sort_order, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, name, lat, lon, webcamsJson, weatherStation, sortOrder, userId).run();
+  try {
+    if (await hasShortSlugColumn(env)) {
+      await env.DB.prepare(
+        'INSERT INTO spots (id, name, lat, lon, webcams, short_slug, weather_station, sort_order, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).bind(id, name, lat, lon, webcamsJson, shortSlug, weatherStation, sortOrder, userId).run();
+    } else {
+      await env.DB.prepare(
+        'INSERT INTO spots (id, name, lat, lon, webcams, weather_station, sort_order, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      ).bind(id, name, lat, lon, webcamsJson, weatherStation, sortOrder, userId).run();
+    }
+  } catch (e) {
+    if ((e.message || '').toLowerCase().includes('unique')) {
+      return Response.json({ error: 'That short name is already in use' }, { status: 409 });
+    }
+    throw e;
+  }
 
-  return Response.json({ id, name, lat, lon, webcams, weather_station: weatherStation, sort_order: sortOrder }, { status: 201 });
+  return Response.json({ id, name, lat, lon, webcams, short_slug: shortSlug, weather_station: weatherStation, sort_order: sortOrder }, { status: 201 });
 }
