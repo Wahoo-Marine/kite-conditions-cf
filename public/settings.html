@@ -47,7 +47,7 @@
       <div class="form-group">
         <label for="spot-short-slug">Short Name (URL)</label>
         <input type="text" id="spot-short-slug" placeholder="turks">
-        <div style="font-size:.7rem;color:var(--text-muted);margin-top:.25rem;">Creates public URL: <code>/s/turks</code></div>
+        <div style="font-size:.7rem;color:var(--text-muted);margin-top:.25rem;">Creates public URL: <code>/share/turks</code></div>
       </div>
       <div class="form-group">
         <label for="spot-lat">Latitude</label>
@@ -321,7 +321,7 @@ function renderSpots() {
     const camCount = cams.length;
     const camBadge = camCount > 0 ? ` <span style="font-size:.7rem;color:var(--text-muted);">📹 ${camCount} cam${camCount > 1 ? 's' : ''}</span>` : '';
     const slugBadge = s.short_slug
-      ? ` <a href="/s/${encodeURIComponent(s.short_slug)}" target="_blank" style="font-size:.72rem;color:var(--accent);text-decoration:none;">🔗 /s/${esc(s.short_slug)}</a>`
+      ? ` <a href="/share/${encodeURIComponent(s.short_slug)}" target="_blank" style="font-size:.72rem;color:var(--accent);text-decoration:none;">🔗 /share/${esc(s.short_slug)}</a>`
       : '';
     html += `<div class="spot-card" data-id="${s.id}">
       <div class="spot-info">
