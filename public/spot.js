@@ -289,7 +289,7 @@ function renderSpot(data) {
       // Re-render tide chart for this day now that it's visible
       const d = days[parseInt(idx)];
       if (d && d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
-        renderTideChart(parseInt(idx), d.tide, d.date, days);
+        renderTideChart(parseInt(idx), d.tide, d.date, days, spot.timezone);
       }
     });
   });
@@ -297,7 +297,7 @@ function renderSpot(data) {
   // Render tide charts for each day that has tide data
   days.forEach((d, i) => {
     if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
-      renderTideChart(i, d.tide, d.date, days);
+      renderTideChart(i, d.tide, d.date, days, spot.timezone);
     }
   });
 
@@ -305,7 +305,7 @@ function renderSpot(data) {
   window.addEventListener('resize', () => {
     days.forEach((d, i) => {
       if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
-        renderTideChart(i, d.tide, d.date, days);
+        renderTideChart(i, d.tide, d.date, days, spot.timezone);
       }
     });
   });
@@ -547,7 +547,7 @@ function showLoading(on) {
 }
 
 // ── Tide Chart ────────────────────────
-function renderTideChart(dayIdx, tide, dayDate, allDays = []) {
+function renderTideChart(dayIdx, tide, dayDate, allDays = [], spotTimezone) {
   const canvas = document.getElementById(`tide-canvas-${dayIdx}`);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -581,23 +581,60 @@ function renderTideChart(dayIdx, tide, dayDate, allDays = []) {
   const hourly = tide.hourly || [];
   if (!hourly.length) return;
 
-  function parseLocalMs(dateStr, timeStr) {
-    return new Date(`${dateStr}T${timeStr}:00`).getTime();
+  function dateToDayIndex(dateStr) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
   }
 
-  function dateToYmd(d) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+  function timeToMinutes(timeStr) {
+    const [h, m] = timeStr.split(':').map(Number);
+    return (h * 60) + m;
   }
 
-  const now = new Date();
-  const todayYmd = dateToYmd(now);
-  const anchor = dayDate === todayYmd ? now : new Date(`${dayDate}T12:00:00`);
-  const windowStartMs = anchor.getTime() - (6 * 60 * 60 * 1000);
-  const windowEndMs = anchor.getTime() + (18 * 60 * 60 * 1000);
-  const windowSpanMs = windowEndMs - windowStartMs;
+  function toScalarMinutes(dateStr, timeStr) {
+    return dateToDayIndex(dateStr) * 1440 + timeToMinutes(timeStr);
+  }
+
+  function formatHourLabelFromScalar(scalarMinutes) {
+    const minuteOfDay = ((scalarMinutes % 1440) + 1440) % 1440;
+    const hour24 = Math.floor(minuteOfDay / 60);
+    const suffix = hour24 >= 12 ? 'p' : 'a';
+    const hour12 = hour24 % 12 || 12;
+    return `${hour12}${suffix}`;
+  }
+
+  function getSpotNow(timeZone) {
+    if (!timeZone) {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      return { date: `${y}-${m}-${d}`, time: `${hh}:${mm}` };
+    }
+
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+
+    const pick = type => parts.find(p => p.type === type)?.value || '';
+    return {
+      date: `${pick('year')}-${pick('month')}-${pick('day')}`,
+      time: `${pick('hour')}:${pick('minute')}`,
+    };
+  }
+
+  const spotNow = getSpotNow(spotTimezone);
+  const nowScalar = toScalarMinutes(spotNow.date, spotNow.time);
+  const anchorScalar = dayDate === spotNow.date
+    ? nowScalar
+    : toScalarMinutes(dayDate, '12:00');
+  const windowStartScalar = anchorScalar - (6 * 60);
+  const windowEndScalar = anchorScalar + (18 * 60);
+  const windowSpanScalar = windowEndScalar - windowStartScalar;
 
   const tideDays = (allDays && allDays.length > 0)
     ? allDays.filter(d => d.tide && d.tide.hourly && d.tide.hourly.length > 0)
@@ -605,7 +642,7 @@ function renderTideChart(dayIdx, tide, dayDate, allDays = []) {
 
   let series = tideDays.flatMap(d =>
     d.tide.hourly.map(h => ({
-      ts: parseLocalMs(d.date, h.time),
+      ts: toScalarMinutes(d.date, h.time),
       time: h.time,
       level: h.level,
       date: d.date,
@@ -613,12 +650,12 @@ function renderTideChart(dayIdx, tide, dayDate, allDays = []) {
   );
 
   series = series
-    .filter(p => p.ts >= windowStartMs && p.ts <= windowEndMs)
+    .filter(p => p.ts >= windowStartScalar && p.ts <= windowEndScalar)
     .sort((a, b) => a.ts - b.ts);
 
   if (series.length < 2) {
     series = hourly.map(h => ({
-      ts: parseLocalMs(dayDate, h.time),
+      ts: toScalarMinutes(dayDate, h.time),
       time: h.time,
       level: h.level,
       date: dayDate,
@@ -628,10 +665,10 @@ function renderTideChart(dayIdx, tide, dayDate, allDays = []) {
   const extremes = tideDays.flatMap(d =>
     (d.tide.extremes || []).map(e => ({
       ...e,
-      ts: parseLocalMs(d.date, e.time),
+      ts: toScalarMinutes(d.date, e.time),
       date: d.date,
     }))
-  ).filter(e => e.ts >= windowStartMs && e.ts <= windowEndMs);
+  ).filter(e => e.ts >= windowStartScalar && e.ts <= windowEndScalar);
 
   const PAD_LEFT = 36;
   const PAD_RIGHT = 12;
@@ -646,7 +683,7 @@ function renderTideChart(dayIdx, tide, dayDate, allDays = []) {
   const range = maxLvl - minLvl || 0.1;
 
   function xPos(ts) {
-    return PAD_LEFT + ((ts - windowStartMs) / windowSpanMs) * chartW;
+    return PAD_LEFT + ((ts - windowStartScalar) / windowSpanScalar) * chartW;
   }
   function yPos(level) {
     return PAD_TOP + chartH - ((level - minLvl) / range) * chartH;
@@ -737,11 +774,9 @@ function renderTideChart(dayIdx, tide, dayDate, allDays = []) {
   ctx.font = '9px -apple-system, sans-serif';
   ctx.textAlign = 'center';
   for (let h = 0; h <= 24; h += 6) {
-    const ts = windowStartMs + (h * 60 * 60 * 1000);
+    const ts = windowStartScalar + (h * 60);
     const x = xPos(ts);
-    const t = new Date(ts);
-    const lbl = t.toLocaleTimeString('en-US', { hour: 'numeric' }).replace(' ', '').toLowerCase();
-    ctx.fillText(lbl, x, H - 5);
+    ctx.fillText(formatHourLabelFromScalar(ts), x, H - 5);
     // Tick
     ctx.beginPath();
     ctx.moveTo(x, PAD_TOP + chartH);
@@ -751,8 +786,8 @@ function renderTideChart(dayIdx, tide, dayDate, allDays = []) {
     ctx.stroke();
   }
 
-  if (dayDate === todayYmd && now.getTime() >= windowStartMs && now.getTime() <= windowEndMs) {
-    const xNow = xPos(now.getTime());
+  if (dayDate === spotNow.date && nowScalar >= windowStartScalar && nowScalar <= windowEndScalar) {
+    const xNow = xPos(nowScalar);
     ctx.beginPath();
     ctx.moveTo(xNow, PAD_TOP);
     ctx.lineTo(xNow, PAD_TOP + chartH);
