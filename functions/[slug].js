@@ -1,10 +1,3 @@
-/**
- * GET /share/:id
- *
- * Share-link route that resolves by spot id or short slug and reuses
- * the main spot page implementation in share mode.
- */
-
 function normalizeShortSlug(value) {
   if (!value) return null;
   const slug = String(value).trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
@@ -20,14 +13,19 @@ function fallbackNameMatch(results, slug) {
   });
 }
 
+const RESERVED = new Set(['api', 'share']);
+
 async function handleRequest(context) {
-  const { request, params, env } = context;
+  const { request, params, env, next } = context;
   const url = new URL(request.url);
 
-  const raw = String(params.id || '').trim();
-  if (!raw) return new Response('Spot not found', { status: 404 });
+  const raw = String(params.slug || '').trim();
+  if (!raw) return next();
 
-  // Fast path: existing spot ids are 8-char hex strings
+  if (RESERVED.has(raw.toLowerCase()) || raw.includes('.')) {
+    return next();
+  }
+
   if (/^[a-f0-9]{8}$/i.test(raw)) {
     url.pathname = '/spot.html';
     url.search = `id=${encodeURIComponent(raw)}&share=1`;
@@ -35,7 +33,7 @@ async function handleRequest(context) {
   }
 
   const slug = normalizeShortSlug(raw);
-  if (!slug) return new Response('Spot not found', { status: 404 });
+  if (!slug) return next();
 
   let spot = null;
 
@@ -53,10 +51,10 @@ async function handleRequest(context) {
       spot = fallbackNameMatch(defaults?.results || [], slug) || null;
     }
   } catch {
-    return new Response('Spot not found', { status: 404 });
+    return next();
   }
 
-  if (!spot) return new Response('Spot not found', { status: 404 });
+  if (!spot) return next();
 
   url.pathname = '/spot.html';
   url.search = `id=${encodeURIComponent(spot.id)}&share=1`;

@@ -273,22 +273,11 @@ async function handleNdbc(stid, spotId, spotName, env) {
         await env.CACHE.put(historyKey, JSON.stringify(history), { expirationTtl: 86400 });
       }
 
-      let history2 = [];
-      try {
-        const raw = await env.CACHE.get(historyKey, { type: 'json' });
-        if (raw && Array.isArray(raw)) {
-          history2 = raw
-            .map(h => ({ ...h, ts: normalizeTimestamp(h.ts, null) }))
-            .filter(h => h.ts != null && Number.isFinite(h.ts))
-            .sort((a, b) => a.ts - b.ts);
-        }
-      } catch (e) { /* ignore */ }
-
       return Response.json({
         spot_id: spotId,
         spot_name: spotName,
         current,
-        history: history2,
+        history,
         history_hours: NDBC_HISTORY_HOURS,
         fetched_fresh: fetchedFresh,
       }, { headers: { 'Cache-Control': 'no-cache', 'Access-Control-Allow-Origin': '*' } });
