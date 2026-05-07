@@ -1,20 +1,17 @@
 /**
- * GET /*
- * Resolve one-segment short spot slugs (e.g. /turks) to share-mode spot page.
- * Falls through to normal Pages/static routing for everything else.
+ * Global middleware for clean public short URLs:
+ *   /turks -> /spot.html?id=<spotId>&share=1
  */
 
-const RESERVED = new Set(['api', 'share', 'settings', 'cam', 'spot.html', 'index.html', 'styles.css', 'spot.js', 'favicon.ico']);
+const RESERVED = new Set([
+  'api', 'share', 'settings', 'cam',
+  'spot.html', 'index.html', 'styles.css', 'spot.js', 'favicon.ico',
+]);
 
 function normalizeShortSlug(value) {
   if (!value) return null;
   const slug = String(value).trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   return slug || null;
-}
-
-function fallbackResponse(context) {
-  if (typeof context.next === 'function') return context.next();
-  return new Response('Not found', { status: 404 });
 }
 
 async function ensureShortSlugSchema(env) {
@@ -40,17 +37,20 @@ function fallbackNameMatch(results, slug) {
 }
 
 export async function onRequest(context) {
+  const { env, request } = context;
+
+  if (request.method !== 'GET') return context.next();
+
+  const url = new URL(request.url);
+  const path = url.pathname.replace(/^\/+|\/+$/g, '');
+
+  // Only handle clean single-segment paths like /turks
+  if (!path || path.includes('/')) return context.next();
+
+  const slug = decodeURIComponent(path).toLowerCase();
+  if (!slug || RESERVED.has(slug) || slug.includes('.')) return context.next();
+
   try {
-    const { env, request } = context;
-    if (request.method !== 'GET') return fallbackResponse(context);
-
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/^\/+|\/+$/g, '');
-    if (!path || path.includes('/')) return fallbackResponse(context);
-
-    const slug = decodeURIComponent(path).toLowerCase();
-    if (!slug || RESERVED.has(slug) || slug.includes('.')) return fallbackResponse(context);
-
     let hasSlug = await hasShortSlugColumn(env);
     if (!hasSlug) {
       await ensureShortSlugSchema(env);
@@ -73,14 +73,17 @@ export async function onRequest(context) {
       }
     }
 
+    // Fallback for pre-migration rows: match normalized default spot names
     const { results } = await env.DB.prepare('SELECT id, name FROM spots WHERE user_id IS NULL ORDER BY sort_order, rowid').all();
     const match = fallbackNameMatch(results, slug);
-    if (!match) return fallbackResponse(context);
-
-    url.pathname = '/spot.html';
-    url.search = `id=${encodeURIComponent(match.id)}&share=1`;
-    return Response.redirect(url.toString(), 302);
+    if (match) {
+      url.pathname = '/spot.html';
+      url.search = `id=${encodeURIComponent(match.id)}&share=1`;
+      return Response.redirect(url.toString(), 302);
+    }
   } catch {
-    return fallbackResponse(context);
+    // On any error, do not block normal site routing
   }
+
+  return context.next();
 }
