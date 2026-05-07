@@ -289,7 +289,7 @@ function renderSpot(data) {
       // Re-render tide chart for this day now that it's visible
       const d = days[parseInt(idx)];
       if (d && d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
-        renderTideChart(parseInt(idx), d.tide);
+        renderTideChart(parseInt(idx), d.tide, d.date, days);
       }
     });
   });
@@ -297,7 +297,7 @@ function renderSpot(data) {
   // Render tide charts for each day that has tide data
   days.forEach((d, i) => {
     if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
-      renderTideChart(i, d.tide);
+      renderTideChart(i, d.tide, d.date, days);
     }
   });
 
@@ -305,7 +305,7 @@ function renderSpot(data) {
   window.addEventListener('resize', () => {
     days.forEach((d, i) => {
       if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
-        renderTideChart(i, d.tide);
+        renderTideChart(i, d.tide, d.date, days);
       }
     });
   });
@@ -547,7 +547,7 @@ function showLoading(on) {
 }
 
 // ── Tide Chart ────────────────────────
-function renderTideChart(dayIdx, tide) {
+function renderTideChart(dayIdx, tide, dayDate, allDays = []) {
   const canvas = document.getElementById(`tide-canvas-${dayIdx}`);
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -578,8 +578,60 @@ function renderTideChart(dayIdx, tide) {
 
   ctx.clearRect(0, 0, W, H);
 
-  const hourly = tide.hourly;
-  const extremes = tide.extremes || [];
+  const hourly = tide.hourly || [];
+  if (!hourly.length) return;
+
+  function parseLocalMs(dateStr, timeStr) {
+    return new Date(`${dateStr}T${timeStr}:00`).getTime();
+  }
+
+  function dateToYmd(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  const now = new Date();
+  const todayYmd = dateToYmd(now);
+  const anchor = dayDate === todayYmd ? now : new Date(`${dayDate}T12:00:00`);
+  const windowStartMs = anchor.getTime() - (6 * 60 * 60 * 1000);
+  const windowEndMs = anchor.getTime() + (18 * 60 * 60 * 1000);
+  const windowSpanMs = windowEndMs - windowStartMs;
+
+  const tideDays = (allDays && allDays.length > 0)
+    ? allDays.filter(d => d.tide && d.tide.hourly && d.tide.hourly.length > 0)
+    : [{ date: dayDate, tide }];
+
+  let series = tideDays.flatMap(d =>
+    d.tide.hourly.map(h => ({
+      ts: parseLocalMs(d.date, h.time),
+      time: h.time,
+      level: h.level,
+      date: d.date,
+    }))
+  );
+
+  series = series
+    .filter(p => p.ts >= windowStartMs && p.ts <= windowEndMs)
+    .sort((a, b) => a.ts - b.ts);
+
+  if (series.length < 2) {
+    series = hourly.map(h => ({
+      ts: parseLocalMs(dayDate, h.time),
+      time: h.time,
+      level: h.level,
+      date: dayDate,
+    }));
+  }
+
+  const extremes = tideDays.flatMap(d =>
+    (d.tide.extremes || []).map(e => ({
+      ...e,
+      ts: parseLocalMs(d.date, e.time),
+      date: d.date,
+    }))
+  ).filter(e => e.ts >= windowStartMs && e.ts <= windowEndMs);
 
   const PAD_LEFT = 36;
   const PAD_RIGHT = 12;
@@ -588,19 +640,13 @@ function renderTideChart(dayIdx, tide) {
   const chartW = W - PAD_LEFT - PAD_RIGHT;
   const chartH = H - PAD_TOP - PAD_BOTTOM;
 
-  const levels = hourly.map(h => h.level);
+  const levels = series.map(h => h.level);
   const minLvl = Math.min(...levels) - 0.05;
   const maxLvl = Math.max(...levels) + 0.05;
   const range = maxLvl - minLvl || 0.1;
 
-  // Parse "HH:MM" to fractional hours
-  function timeToHours(t) {
-    const [h, m] = t.split(':').map(Number);
-    return h + m / 60;
-  }
-
-  function xPos(timeStr) {
-    return PAD_LEFT + (timeToHours(timeStr) / 24) * chartW;
+  function xPos(ts) {
+    return PAD_LEFT + ((ts - windowStartMs) / windowSpanMs) * chartW;
   }
   function yPos(level) {
     return PAD_TOP + chartH - ((level - minLvl) / range) * chartH;
@@ -642,12 +688,12 @@ function renderTideChart(dayIdx, tide) {
 
   // Tide curve — filled area
   const areaPath = new Path2D();
-  areaPath.moveTo(xPos(hourly[0].time), yPos(hourly[0].level));
-  for (let i = 1; i < hourly.length; i++) {
-    areaPath.lineTo(xPos(hourly[i].time), yPos(hourly[i].level));
+  areaPath.moveTo(xPos(series[0].ts), yPos(series[0].level));
+  for (let i = 1; i < series.length; i++) {
+    areaPath.lineTo(xPos(series[i].ts), yPos(series[i].level));
   }
-  areaPath.lineTo(xPos(hourly[hourly.length - 1].time), yPos(minLvl));
-  areaPath.lineTo(xPos(hourly[0].time), yPos(minLvl));
+  areaPath.lineTo(xPos(series[series.length - 1].ts), yPos(minLvl));
+  areaPath.lineTo(xPos(series[0].ts), yPos(minLvl));
   areaPath.closePath();
 
   const grad = ctx.createLinearGradient(0, PAD_TOP, 0, PAD_TOP + chartH);
@@ -658,9 +704,9 @@ function renderTideChart(dayIdx, tide) {
 
   // Tide curve line
   ctx.beginPath();
-  ctx.moveTo(xPos(hourly[0].time), yPos(hourly[0].level));
-  for (let i = 1; i < hourly.length; i++) {
-    ctx.lineTo(xPos(hourly[i].time), yPos(hourly[i].level));
+  ctx.moveTo(xPos(series[0].ts), yPos(series[0].level));
+  for (let i = 1; i < series.length; i++) {
+    ctx.lineTo(xPos(series[i].ts), yPos(series[i].level));
   }
   ctx.strokeStyle = '#38bdf8';
   ctx.lineWidth = 2;
@@ -668,7 +714,7 @@ function renderTideChart(dayIdx, tide) {
 
   // Extreme markers
   extremes.forEach(e => {
-    const x = xPos(e.time);
+    const x = xPos(e.ts);
     const y = yPos(e.level);
     const isHigh = e.type === 'H';
 
@@ -691,9 +737,11 @@ function renderTideChart(dayIdx, tide) {
   ctx.font = '9px -apple-system, sans-serif';
   ctx.textAlign = 'center';
   for (let h = 0; h <= 24; h += 6) {
-    const timeStr = String(h).padStart(2, '0') + ':00';
-    const x = PAD_LEFT + (h / 24) * chartW;
-    ctx.fillText(h === 0 ? '12a' : h === 6 ? '6a' : h === 12 ? '12p' : h === 18 ? '6p' : '12a', x, H - 5);
+    const ts = windowStartMs + (h * 60 * 60 * 1000);
+    const x = xPos(ts);
+    const t = new Date(ts);
+    const lbl = t.toLocaleTimeString('en-US', { hour: 'numeric' }).replace(' ', '').toLowerCase();
+    ctx.fillText(lbl, x, H - 5);
     // Tick
     ctx.beginPath();
     ctx.moveTo(x, PAD_TOP + chartH);
@@ -701,6 +749,18 @@ function renderTideChart(dayIdx, tide) {
     ctx.strokeStyle = 'rgba(255,255,255,0.15)';
     ctx.lineWidth = 1;
     ctx.stroke();
+  }
+
+  if (dayDate === todayYmd && now.getTime() >= windowStartMs && now.getTime() <= windowEndMs) {
+    const xNow = xPos(now.getTime());
+    ctx.beginPath();
+    ctx.moveTo(xNow, PAD_TOP);
+    ctx.lineTo(xNow, PAD_TOP + chartH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 }
 
