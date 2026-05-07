@@ -26,18 +26,24 @@ export async function onRequestGet(context) {
 
   let results;
 
-  if (source === 'defaults' || !email) {
-    // Explicitly requesting defaults, or unauthenticated
+  if (source === 'defaults') {
+    // Explicitly requesting defaults (admin view)
     ({ results } = await env.DB.prepare(
       'SELECT id, name, lat, lon, webcams, short_slug, weather_station, sort_order FROM spots WHERE user_id IS NULL ORDER BY sort_order, rowid'
     ).all());
   } else if (source === 'mine') {
-    // Settings page: return only personal spots (may be empty)
+    // Settings page: return only personal spots — never fall back to defaults
+    if (!email) return Response.json([]);
     ({ results } = await env.DB.prepare(
       'SELECT id, name, lat, lon, webcams, short_slug, weather_station, sort_order FROM spots WHERE user_id = ? ORDER BY sort_order, rowid'
     ).bind(email).all());
+  } else if (!email) {
+    // Unauthenticated dashboard: show defaults
+    ({ results } = await env.DB.prepare(
+      'SELECT id, name, lat, lon, webcams, short_slug, weather_station, sort_order FROM spots WHERE user_id IS NULL ORDER BY sort_order, rowid'
+    ).all());
   } else {
-    // Dashboard: user's spots, or fall back to defaults
+    // Authenticated dashboard: user's spots, or fall back to defaults
     const personal = await env.DB.prepare(
       'SELECT id, name, lat, lon, webcams, short_slug, weather_station, sort_order FROM spots WHERE user_id = ? ORDER BY sort_order, rowid'
     ).bind(email).all();

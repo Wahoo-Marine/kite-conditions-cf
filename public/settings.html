@@ -302,15 +302,22 @@ async function loadSpots() {
 function renderSpots() {
   const list = $('#spot-list');
   if (spots.length === 0) {
-    if (viewMode === 'mine') {
-      list.innerHTML = `<div class="empty-state">
-        <div class="emoji">🪁</div>
-        <p>You don’t have any personal spots yet.</p>
-        <button class="btn btn-save" style="margin:.75rem auto;display:block;" onclick="copyDefaults(this)">📋 Copy default spots to get started</button>
-        <p style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem;">Or add a spot manually with the button above.</p>
-      </div>`;
+    if (viewMode === ‘mine’) {
+      if (!currentUser?.email) {
+        list.innerHTML = `<div class="empty-state">
+          <div class="emoji">🔒</div>
+          <p>Log in to manage your personal spots.</p>
+        </div>`;
+      } else {
+        list.innerHTML = `<div class="empty-state">
+          <div class="emoji">🪁</div>
+          <p>You don’t have any personal spots yet.</p>
+          <button class="btn btn-save" style="margin:.75rem auto;display:block;" onclick="copyDefaults(this)">📋 Copy default spots to get started</button>
+          <p style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem;">Or add a spot manually with the button above.</p>
+        </div>`;
+      }
     } else {
-      list.innerHTML = '<div class="empty-state"><div class="emoji">🪁</div><p>No default spots yet.</p></div>';
+      list.innerHTML = ‘<div class="empty-state"><div class="emoji">🪁</div><p>No default spots yet.</p></div>’;
     }
     return;
   }
