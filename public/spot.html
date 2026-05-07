@@ -6,6 +6,17 @@
   <title>🪁 Spot Detail</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <style>
+    body.share-mode nav,
+    body.share-mode .back-link,
+    body.share-mode .range-picker {
+      display: none !important;
+    }
+
+    body.share-mode header .subtitle {
+      display: none !important;
+    }
+  </style>
 </head>
 <body>
 
@@ -84,6 +95,7 @@ const $$ = s => document.querySelectorAll(s);
 
 const params = new URLSearchParams(location.search);
 const spotId = params.get('id');
+const isShareView = params.get('share') === '1';
 if (!spotId) { location.href = '/'; }
 
 let currentDays = parseInt(localStorage.getItem('kite_days') || '7');
@@ -91,6 +103,7 @@ let currentOffset = parseInt(localStorage.getItem('kite_offset') || '0');
 let webcamTimers = [];
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (isShareView) document.body.classList.add('share-mode');
   initRangePicker();
   loadSpot();
 });
