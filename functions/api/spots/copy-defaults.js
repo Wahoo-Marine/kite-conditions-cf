@@ -7,7 +7,7 @@ import { getUserEmail } from '../../lib/auth.js';
 
 export async function onRequestPost(context) {
   const { env, request } = context;
-  const email = getUserEmail(request);
+  const email = await getUserEmail(request, env);
   if (!email) return Response.json({ error: 'Authentication required' }, { status: 401 });
 
   // Prevent overwriting existing personal spots

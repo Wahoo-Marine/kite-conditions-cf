@@ -26,3 +26,5 @@ custom_domain = true
 [vars]
 # Set this to your Cloudflare Access login email to enable admin controls
 ADMIN_EMAIL = "chip@wahoomarine.com"
+# Audience tag for the CF Access application protecting /settings
+CF_ACCESS_AUD = "b480a3d197b1c88a7dcc0b0db44a204d89ae95b32ad690085a9cac379887ad79"

@@ -6,9 +6,9 @@ import { getUserEmail, isAdmin } from '../lib/auth.js';
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const email = getUserEmail(request);
+  const email = await getUserEmail(request, env);
   return Response.json({
     email,
-    isAdmin: isAdmin(request, env),
+    isAdmin: await isAdmin(request, env),
   });
 }

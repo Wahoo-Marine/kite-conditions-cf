@@ -22,7 +22,7 @@ export async function onRequestGet(context) {
   const { env, request } = context;
   const url = new URL(request.url);
   const source = url.searchParams.get('source'); // 'mine' | 'defaults' | null
-  const email = getUserEmail(request);
+  const email = await getUserEmail(request, env);
 
   let results;
 
@@ -65,13 +65,13 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   const { env, request } = context;
-  const email = getUserEmail(request);
+  const email = await getUserEmail(request, env);
   if (!email) return Response.json({ error: 'Authentication required' }, { status: 401 });
 
   const body = await request.json();
 
   // Admin can create default spots (user_id=NULL); everyone else gets user_id=email
-  const userId = (body.is_default && isAdmin(request, env)) ? null : email;
+  const userId = (body.is_default && await isAdmin(request, env)) ? null : email;
 
   const name = (body.name || '').trim();
   const lat = parseFloat(body.lat);

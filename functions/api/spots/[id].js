@@ -15,8 +15,8 @@ function isValidShortSlug(slug) {
   return slug == null || /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$/.test(slug);
 }
 
-function canModify(spot, request, env) {
-  const email = getUserEmail(request);
+async function canModify(spot, request, env) {
+  const email = await getUserEmail(request, env);
   if (!email) return false;
   if (spot.user_id === null) return isAdmin(request, env); // default spot: admin only
   return spot.user_id === email;                           // personal spot: must match
@@ -28,7 +28,7 @@ export async function onRequestPut(context) {
 
   const spot = await env.DB.prepare('SELECT * FROM spots WHERE id = ?').bind(spotId).first();
   if (!spot) return Response.json({ error: 'Spot not found' }, { status: 404 });
-  if (!canModify(spot, request, env)) return Response.json({ error: 'Forbidden' }, { status: 403 });
+  if (!await canModify(spot, request, env)) return Response.json({ error: 'Forbidden' }, { status: 403 });
 
   const body = await request.json();
   const name = (body.name || '').trim() || spot.name;
@@ -59,7 +59,7 @@ export async function onRequestDelete(context) {
   const { env, request, params } = context;
   const spot = await env.DB.prepare('SELECT * FROM spots WHERE id = ?').bind(params.id).first();
   if (!spot) return Response.json({ error: 'Spot not found' }, { status: 404 });
-  if (!canModify(spot, request, env)) return Response.json({ error: 'Forbidden' }, { status: 403 });
+  if (!await canModify(spot, request, env)) return Response.json({ error: 'Forbidden' }, { status: 403 });
 
   await env.DB.prepare('DELETE FROM spots WHERE id = ?').bind(params.id).run();
   return Response.json({ ok: true });
