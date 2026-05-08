@@ -43,7 +43,7 @@ export async function onRequestGet(context) {
   const numDays = Math.round((endDate - startDate) / 86400000) + 1;
 
   // Load spots from D1 — user's personal spots, or defaults if they have none
-  const email = getUserEmail(request);
+  const email = await getUserEmail(request, env);
   let spots;
   if (email) {
     const personal = await env.DB.prepare(

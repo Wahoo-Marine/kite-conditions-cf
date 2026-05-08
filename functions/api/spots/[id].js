@@ -18,7 +18,7 @@ function isValidShortSlug(slug) {
 async function canModify(spot, request, env) {
   const email = await getUserEmail(request, env);
   if (!email) return false;
-  if (spot.user_id === null) return isAdmin(request, env); // default spot: admin only
+  if (spot.user_id === null) return await isAdmin(request, env); // default spot: admin only
   return spot.user_id === email;                           // personal spot: must match
 }
 
