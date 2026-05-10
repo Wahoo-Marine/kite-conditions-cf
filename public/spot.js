@@ -294,11 +294,15 @@ function renderSpot(data) {
     });
   });
 
-  // Render tide charts for each day that has tide data
-  days.forEach((d, i) => {
-    if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
-      renderTideChart(i, d.tide, d.date, days, spot.timezone);
-    }
+  // Render tide charts for each day that has tide data.
+  // Defer to next frame: showLoading(false) runs after renderSpot returns,
+  // so without this, #app is still display:none and width measurements are wrong.
+  requestAnimationFrame(() => {
+    days.forEach((d, i) => {
+      if (d.tide && d.tide.hourly && d.tide.hourly.length > 0) {
+        renderTideChart(i, d.tide, d.date, days, spot.timezone);
+      }
+    });
   });
 
   // Redraw tide charts on resize
@@ -915,7 +919,7 @@ function renderWindChart(history, hours) {
     label.textContent = `Wind history building up — data appears as readings are collected over ${hours} hours`;
     ctx.fillStyle = 'rgba(255,255,255,0.1)';
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = 'var(--text-muted)';
+    ctx.fillStyle = '#8899a6';
     ctx.font = '13px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Collecting wind data...', W / 2, H / 2);

@@ -302,7 +302,7 @@ async function loadSpots() {
 function renderSpots() {
   const list = $('#spot-list');
   if (spots.length === 0) {
-    if (viewMode === ‘mine’) {
+    if (viewMode === 'mine') {
       if (!currentUser?.email) {
         list.innerHTML = `<div class="empty-state">
           <div class="emoji">🔒</div>
@@ -317,7 +317,7 @@ function renderSpots() {
         </div>`;
       }
     } else {
-      list.innerHTML = ‘<div class="empty-state"><div class="emoji">🪁</div><p>No default spots yet.</p></div>’;
+      list.innerHTML = '<div class="empty-state"><div class="emoji">🪁</div><p>No default spots yet.</p></div>';
     }
     return;
   }

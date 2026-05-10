@@ -36,8 +36,8 @@ export async function onRequestGet(context) {
     return handleNdbc(stid, spotId, spot.name, env);
   }
 
-  const historyKey = `${HISTORY_KEY_PREFIX}${spotId}`;
-  const currentKey = `${CURRENT_KEY_PREFIX}${spotId}`;
+  const historyKey = `${HISTORY_KEY_PREFIX}${token}`;
+  const currentKey = `${CURRENT_KEY_PREFIX}${token}`;
 
   // Load existing history from KV
   let history = [];
@@ -191,8 +191,8 @@ const MPS_TO_MPH = 2.23694;
 const NDBC_HISTORY_HOURS = 6;
 
 async function handleNdbc(stid, spotId, spotName, env) {
-  const historyKey = `${HISTORY_KEY_PREFIX}${spotId}`;
-  const currentKey = `${CURRENT_KEY_PREFIX}${spotId}`;
+  const historyKey = `${HISTORY_KEY_PREFIX}ndbc:${stid}`;
+  const currentKey = `${CURRENT_KEY_PREFIX}ndbc:${stid}`;
   const now = Math.floor(Date.now() / 1000);
 
   // Check throttle
