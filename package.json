@@ -4,7 +4,7 @@
   "private": true,
   "description": "Kiteboarding forecast dashboard on Cloudflare Workers + D1 + KV",
   "scripts": {
-    "build": "npx wrangler pages functions build --outdir=./dist",
+    "build": "npx wrangler pages functions build --outdir=./dist && mv ./dist/index.js ./dist/pages-bundle.js",
     "dev": "npx wrangler dev --port 5555",
     "deploy": "npm run build && npx wrangler deploy",
     "db:migrate": "npx wrangler d1 execute kite-conditions-db --file=./schema.sql",

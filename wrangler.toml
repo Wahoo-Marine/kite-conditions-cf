@@ -1,8 +1,13 @@
 name = "kite-conditions"
 account_id = "306c7c1b7819d4aab071bd67cee32229"
 compatibility_date = "2024-12-01"
-main = "./dist/index.js"
+main = "./src/worker.js"
 workers_dev = true
+
+# Run the wind poll every 2 minutes so live wind history accumulates
+# regardless of whether anyone is viewing a spot page.
+[triggers]
+crons = ["*/2 * * * *"]
 
 [assets]
 directory = "./public"

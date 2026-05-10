@@ -2,3 +2,5 @@ node_modules/
 .wrangler/
 .dev.vars
 dist/
+.claude/*
+!.claude/settings.json
