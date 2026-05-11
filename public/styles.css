@@ -172,17 +172,20 @@ nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
   font-size: 0.82rem;
   white-space: nowrap;
   padding-left: 0.8rem;
-  background: rgba(255,255,255,0.02);
+  background: var(--card);
   position: sticky;
   left: 0;
   z-index: 1;
   min-width: 170px;
+  box-shadow: 4px 0 6px -4px rgba(0,0,0,0.35);
 }
+
+.grid-table thead th.spot-cell { z-index: 3; }
 
 .grid-table tbody tr { background: var(--card); transition: background 0.1s; cursor: pointer; }
 .grid-table tbody tr:hover { background: var(--card-hover); }
+.grid-table tbody tr:hover .spot-cell { background: var(--card-hover); color: var(--accent); }
 .grid-table tbody tr:last-child td { border-bottom: none; }
-.grid-table tbody tr:hover .spot-cell { color: var(--accent); }
 
 .grid-cell { min-width: 90px; }
 .grid-cell .gc-wind { font-size: 1.05rem; font-weight: 800; line-height: 1.2; }

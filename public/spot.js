@@ -77,11 +77,10 @@ function renderSpot(data) {
     heroHTML += detailItem('Gusts', `${Math.round(current.gust)} mph`);
     heroHTML += detailItem('Temp', `${Math.round(current.temp)}°F`);
     heroHTML += detailItem('Weather', `${current.sky_icon || ''} ${current.sky || ''}`);
-    heroHTML += detailItem('Rating', `${curRatingEmoji} ${curRatingLabel}`);
     heroHTML += '</div>';
     heroHTML += '</div>';
     const rc = ratingClass(current.rating);
-    heroHTML += `<div class="current-rating ${rc}" style="margin-top:0.8rem;">${curRatingEmoji} ${curRatingLabel}</div>`;
+    heroHTML += `<div class="current-rating ${rc}">${curRatingEmoji} ${curRatingLabel}</div>`;
   } else {
     heroHTML += '<div class="no-current">Current conditions not available</div>';
   }
@@ -896,9 +895,9 @@ function renderWindChart(history, hours) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
 
-  // Resize canvas for crisp rendering
-  const rect = canvas.parentElement.getBoundingClientRect();
-  const W = rect.width || 800;
+  // Resize canvas for crisp rendering — clientWidth excludes the parent's
+  // padding so the chart sits inside it (vs. overflowing flush to the edge).
+  const W = canvas.parentElement.clientWidth || 800;
   const H = 220;
   canvas.width = W * dpr;
   canvas.height = H * dpr;
