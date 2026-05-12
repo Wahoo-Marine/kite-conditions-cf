@@ -66,12 +66,18 @@ function renderSpot(data) {
   if (current) {
     const curRatingLabel = { 'send-it': 'SEND IT', maybe: 'MAYBE', nope: 'NOPE', unknown: '?' }[current.rating] || '?';
     const curRatingEmoji = { 'send-it': '🟢', maybe: '🟡', nope: '🔴', unknown: '⚪' }[current.rating] || '⚪';
+    const rc = ratingClass(current.rating);
 
     heroHTML += '<div class="current-conditions">';
+    heroHTML += '<div class="current-top">';
     heroHTML += '<div class="current-wind">';
     heroHTML += `<div class="wind-value" style="color:${windColor(current.wind)}">${Math.round(current.wind)}</div>`;
+    heroHTML += '<div class="wind-meta">';
     heroHTML += '<div class="wind-unit">mph</div>';
     heroHTML += `<div class="wind-dir">${current.dir || ''}</div>`;
+    heroHTML += '</div>';
+    heroHTML += '</div>';
+    heroHTML += `<div class="current-rating ${rc}">${curRatingEmoji} ${curRatingLabel}</div>`;
     heroHTML += '</div>';
     heroHTML += '<div class="current-details">';
     heroHTML += detailItem('Gusts', `${Math.round(current.gust)} mph`);
@@ -79,8 +85,6 @@ function renderSpot(data) {
     heroHTML += detailItem('Weather', `${current.sky_icon || ''} ${current.sky || ''}`);
     heroHTML += '</div>';
     heroHTML += '</div>';
-    const rc = ratingClass(current.rating);
-    heroHTML += `<div class="current-rating ${rc}">${curRatingEmoji} ${curRatingLabel}</div>`;
   } else {
     heroHTML += '<div class="no-current">Current conditions not available</div>';
   }
