@@ -1036,12 +1036,20 @@ footer a:hover { text-decoration: underline; }
   .hourly-table { font-size: var(--text-xs); }
   .hourly-table td, .hourly-table th { padding: var(--space-2) var(--space-3); }
   .hide-mobile { display: none; }
+  .grid-table {
+    /* Let the table size to its content on mobile — otherwise the 700px
+       desktop floor stretches the spot column when only 1-2 days are visible. */
+    min-width: 0;
+  }
   .grid-table .spot-cell {
     min-width: 100px;
+    max-width: 140px;
     font-size: 0.72rem;
     position: static;
     box-shadow: none;
     padding-left: var(--space-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .grid-table thead th.spot-cell { position: static; }
   .grid-cell { min-width: 72px; }
