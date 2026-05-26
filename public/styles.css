@@ -1048,8 +1048,9 @@ footer a:hover { text-decoration: underline; }
     position: static;
     box-shadow: none;
     padding-left: var(--space-3);
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
   }
   .grid-table thead th.spot-cell { position: static; }
   .grid-cell { min-width: 72px; }
