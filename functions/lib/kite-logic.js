@@ -146,7 +146,12 @@ export async function fetchForecast(lat, lon, kvCache) {
       const resp = await fetch(`${OPEN_METEO_URL}?${params}`, {
         signal: AbortSignal.timeout(30000),
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok) {
+        // Drain the body so the fetch slot is released — leaving it
+        // unread can deadlock the Worker's concurrent-fetch pool.
+        await resp.body?.cancel();
+        throw new Error(`HTTP ${resp.status}`);
+      }
       const data = await resp.json();
 
       // Store in KV with TTL
@@ -322,7 +327,10 @@ export async function fetchTides(lat, lon, kvCache) {
       const resp = await fetch(`${MARINE_API_URL}?${params}`, {
         signal: AbortSignal.timeout(15000),
       });
-      if (!resp.ok) throw new Error(`Marine HTTP ${resp.status}`);
+      if (!resp.ok) {
+        await resp.body?.cancel();
+        throw new Error(`Marine HTTP ${resp.status}`);
+      }
       const data = await resp.json();
 
       if (kvCache) {

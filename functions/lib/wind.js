@@ -109,7 +109,10 @@ async function fetchWeatherLink(token) {
     signal: AbortSignal.timeout(10000),
     headers: { 'User-Agent': 'KiteConditions/1.0', 'Accept': 'application/json' },
   });
-  if (!resp.ok) throw new Error(`WeatherLink HTTP ${resp.status}`);
+  if (!resp.ok) {
+    await resp.body?.cancel();
+    throw new Error(`WeatherLink HTTP ${resp.status}`);
+  }
   const wl = await resp.json();
 
   const windDir = wl.windDirection || 0;
@@ -141,7 +144,10 @@ async function fetchNdbc(stid) {
     signal: AbortSignal.timeout(10000),
     headers: { 'User-Agent': 'KiteConditions/1.0' },
   });
-  if (!resp.ok) throw new Error(`NDBC HTTP ${resp.status}`);
+  if (!resp.ok) {
+    await resp.body?.cancel();
+    throw new Error(`NDBC HTTP ${resp.status}`);
+  }
   const text = await resp.text();
   const lines = text.trim().split('\n').filter(l => !l.startsWith('#'));
   if (!lines.length) throw new Error('No NDBC data');

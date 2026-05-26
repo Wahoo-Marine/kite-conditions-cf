@@ -17,7 +17,10 @@ let _cacheExpiry = 0;
 async function getPublicKeys() {
   if (_cachedKeys && Date.now() < _cacheExpiry) return _cachedKeys;
   const resp = await fetch(CERTS_URL);
-  if (!resp.ok) throw new Error(`CF Access certs fetch failed: ${resp.status}`);
+  if (!resp.ok) {
+    await resp.body?.cancel();
+    throw new Error(`CF Access certs fetch failed: ${resp.status}`);
+  }
   const { keys } = await resp.json();
   _cachedKeys = await Promise.all(
     keys.map(async jwk => ({
