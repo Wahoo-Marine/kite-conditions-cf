@@ -116,9 +116,11 @@ export const CACHE_TTL = 900; // 15 minutes
 export async function fetchForecast(lat, lon, kvCache) {
   const cacheKey = `forecast:${lat.toFixed(4)},${lon.toFixed(4)}`;
 
-  // Try KV cache
+  // Load KV cache once — used both for fresh hits and for stale fallback
+  // when upstream is failing.
+  let cached = null;
   if (kvCache) {
-    const cached = await kvCache.get(cacheKey, { type: 'json' });
+    cached = await kvCache.get(cacheKey, { type: 'json' });
     if (cached) {
       const age = Math.floor(Date.now() / 1000) - cached.ts;
       if (age < CACHE_TTL) {
@@ -127,7 +129,8 @@ export async function fetchForecast(lat, lon, kvCache) {
     }
   }
 
-  // Fetch from Open-Meteo with retry
+  // Fetch from Open-Meteo with retry. Keep the budget tight so the request
+  // can't blow past the Workers 30s wall when upstream is flaky.
   const params = new URLSearchParams({
     latitude: lat,
     longitude: lon,
@@ -140,24 +143,21 @@ export async function fetchForecast(lat, lon, kvCache) {
   });
 
   let lastErr;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 2 ** attempt * 1000));
+      if (attempt > 0) await new Promise(r => setTimeout(r, 500));
       const resp = await fetch(`${OPEN_METEO_URL}?${params}`, {
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(8000),
       });
       if (!resp.ok) {
-        // Drain the body so the fetch slot is released — leaving it
-        // unread can deadlock the Worker's concurrent-fetch pool.
         await resp.body?.cancel();
         throw new Error(`HTTP ${resp.status}`);
       }
       const data = await resp.json();
 
-      // Store in KV with TTL
       if (kvCache) {
         await kvCache.put(cacheKey, JSON.stringify({ ts: Math.floor(Date.now() / 1000), data }), {
-          expirationTtl: CACHE_TTL * 2,
+          expirationTtl: CACHE_TTL * 8, // keep stale copies around for fallback
         });
       }
 
@@ -165,6 +165,11 @@ export async function fetchForecast(lat, lon, kvCache) {
     } catch (e) {
       lastErr = e;
     }
+  }
+
+  // Upstream failed — serve stale cache if we have one.
+  if (cached) {
+    return { data: cached.data, cacheAge: Math.floor(Date.now() / 1000) - cached.ts };
   }
   throw lastErr;
 }
@@ -302,8 +307,9 @@ export function processForecast(rawData, startDate, endDate) {
 export async function fetchTides(lat, lon, kvCache) {
   const cacheKey = `tides:${lat.toFixed(4)},${lon.toFixed(4)}`;
 
+  let cached = null;
   if (kvCache) {
-    const cached = await kvCache.get(cacheKey, { type: 'json' });
+    cached = await kvCache.get(cacheKey, { type: 'json' });
     if (cached) {
       const age = Math.floor(Date.now() / 1000) - cached.ts;
       if (age < CACHE_TTL) {
@@ -321,11 +327,11 @@ export async function fetchTides(lat, lon, kvCache) {
   });
 
   let lastErr;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 2 ** attempt * 1000));
+      if (attempt > 0) await new Promise(r => setTimeout(r, 500));
       const resp = await fetch(`${MARINE_API_URL}?${params}`, {
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(8000),
       });
       if (!resp.ok) {
         await resp.body?.cancel();
@@ -335,13 +341,17 @@ export async function fetchTides(lat, lon, kvCache) {
 
       if (kvCache) {
         await kvCache.put(cacheKey, JSON.stringify({ ts: Math.floor(Date.now() / 1000), data }), {
-          expirationTtl: CACHE_TTL * 2,
+          expirationTtl: CACHE_TTL * 8,
         });
       }
       return { data, cacheAge: 0 };
     } catch (e) {
       lastErr = e;
     }
+  }
+
+  if (cached) {
+    return { data: cached.data, cacheAge: Math.floor(Date.now() / 1000) - cached.ts };
   }
   throw lastErr;
 }
