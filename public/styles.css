@@ -1036,7 +1036,14 @@ footer a:hover { text-decoration: underline; }
   .hourly-table { font-size: var(--text-xs); }
   .hourly-table td, .hourly-table th { padding: var(--space-2) var(--space-3); }
   .hide-mobile { display: none; }
-  .grid-table .spot-cell { min-width: 120px; font-size: 0.72rem; }
+  .grid-table .spot-cell {
+    min-width: 100px;
+    font-size: 0.72rem;
+    position: static;
+    box-shadow: none;
+    padding-left: var(--space-3);
+  }
+  .grid-table thead th.spot-cell { position: static; }
   .grid-cell { min-width: 72px; }
   .grid-cell .gc-wind { font-size: 0.9rem; }
   .grid-cell .gc-detail { font-size: 0.62rem; }
